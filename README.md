@@ -164,6 +164,8 @@ This repository includes `render.yaml` for the two-service deployment:
 5. Copy the API service URL into the client service as `VITE_API_URL`.
 6. Copy the client service URL into the API service as `FRONTEND_URL`, then redeploy both services.
 
+If configuring the client manually as a Render web service, use `client` as the root directory and `npm install && npm run build` as the build command. For the repository root, use `npm install && npm run build`; the root build script installs the client dependencies before running Vite.
+
 The API health check is available at `/api/health`. Render static sites publish the Vite build from `client/dist`.
 
 If you want me to also replace any other hard-coded API URLs or add CI/deployment files, tell me and I will apply those changes.
