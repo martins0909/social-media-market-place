@@ -1,0 +1,190 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 210 20% 98%;
+    --foreground: 210 20% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 210 20% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 20% 12%;
+
+    --primary: 214 80% 42%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 214 80% 52%;
+
+    --secondary: 210 15% 92%;
+    --secondary-foreground: 210 20% 12%;
+
+    --muted: 210 15% 95%;
+    --muted-foreground: 210 12% 45%;
+
+    --accent: 40 85% 60%;
+    --accent-foreground: 210 20% 12%;
+
+    --success: 142 70% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 210 15% 88%;
+    --input: 210 15% 88%;
+    --ring: 214 80% 42%;
+
+    --radius: 0.75rem;
+
+    --gradient-primary: linear-gradient(135deg, #1565C0, #FFC107);
+    --gradient-subtle: linear-gradient(180deg, hsl(210 20% 98%), hsl(210 15% 95%));
+    
+    --shadow-elegant: 0 10px 40px -10px hsl(214 80% 42% / 0.2);
+    --shadow-card: 0 4px 20px -2px hsl(210 20% 12% / 0.08);
+    
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .dark {
+    --background: 0 0% 0%;
+    --foreground: 210 20% 98%;
+
+    --card: 0 0% 4%;
+    --card-foreground: 210 20% 98%;
+
+    --popover: 0 0% 4%;
+    --popover-foreground: 210 20% 98%;
+
+    --primary: 186 75% 55%;
+    --primary-foreground: 210 25% 8%;
+    --primary-glow: 186 85% 65%;
+
+    --secondary: 210 18% 18%;
+    --secondary-foreground: 210 20% 98%;
+
+    --muted: 210 18% 18%;
+    --muted-foreground: 210 15% 65%;
+
+    --accent: 40 85% 60%;
+    --accent-foreground: 210 25% 8%;
+
+    --success: 142 70% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 12%;
+    --input: 0 0% 12%;
+    --ring: 186 75% 55%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(186 75% 55%), hsl(186 85% 65%));
+    --gradient-subtle: linear-gradient(180deg, hsl(210 25% 8%), hsl(210 22% 12%));
+    
+    --shadow-elegant: 0 10px 40px -10px hsl(186 75% 55% / 0.3);
+    --shadow-card: 0 4px 20px -2px hsl(0 0% 0% / 0.4);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@layer utilities {
+  .gradient-primary {
+    background: var(--gradient-primary);
+  }
+  
+  .shadow-elegant {
+    box-shadow: var(--shadow-elegant);
+  }
+  
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+  
+  .transition-smooth {
+    transition: var(--transition-smooth);
+  }
+
+  /* Subtle shimmering sweep for CTA buttons */
+  .btn-shimmer {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate; /* keeps shimmer within button stacking context */
+  }
+
+  .btn-shimmer::after {
+    content: "";
+    position: absolute;
+    top: -50%;
+    left: -60%;
+    width: 50%;
+    height: 200%;
+    background: linear-gradient(
+      120deg,
+      rgba(255,255,255,0) 0%,
+      rgba(255,255,255,0.25) 50%,
+      rgba(255,255,255,0) 100%
+    );
+    transform: skewX(-20deg);
+    animation: shimmer 3s ease-in-out infinite;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  @keyframes shimmer {
+    0% { left: -60%; }
+    100% { left: 120%; }
+  }
+  /* Subtle floating animation for hero images */
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+    will-change: transform;
+  }
+
+  @keyframes float {
+    0% {
+      transform: translateY(0) rotate(0deg) scale(1);
+    }
+    25% {
+      transform: translateY(-8px) rotate(-0.5deg) scale(1.01);
+    }
+    50% {
+      transform: translateY(0px) rotate(0deg) scale(1);
+    }
+    75% {
+      transform: translateY(6px) rotate(0.5deg) scale(0.995);
+    }
+    100% {
+      transform: translateY(0) rotate(0deg) scale(1);
+    }
+  }
+}
+
+/* Marquee (horizontal scrolling list) */
+@layer utilities {
+  .marquee { overflow: hidden; }
+  .marquee-track { display: flex; gap: 2rem; align-items: center; animation: marquee 20s linear infinite; }
+  @keyframes marquee {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+}

@@ -1,0 +1,106 @@
+# =========================
+# Dependencies
+# =========================
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# =========================
+# Build output
+# =========================
+dist/
+dist-ssr/
+build/
+out/
+client/dist/
+client/dist-ssr/
+server/dist/
+server/build/
+
+# =========================
+# Tooling caches
+# =========================
+client/.vite/
+.cache/
+.parcel-cache/
+.turbo/
+.vercel/
+coverage/
+.nyc_output/
+.eslintcache
+*.tsbuildinfo
+
+# Vite / tooling temp files
+*.timestamp-*
+
+# =========================
+# Logs
+# =========================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# =========================
+# Environment variables
+# =========================
+.env
+.env.*
+client/.env
+client/.env.*
+server/.env
+server/.env.*
+
+# keep example env files if you add them later
+!.env.example
+!.env.sample
+
+# =========================
+# Prisma / local databases
+# =========================
+*.db
+*.sqlite
+*.sqlite3
+
+# =========================
+# Editor directories and files
+# =========================
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# =========================
+# OS / system files
+# =========================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# =========================
+# Misc
+# =========================
+*.tgz
+*.bak
+*.tmp
+
+# Visual Studio
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Local investigation and one-off repair artifacts
+img_out.txt
+output.txt
+temp.js
+client/check.txt
+client/lines.txt
+client/recover.txt
+client/syntax_check.txt
+client/snippet*.txt
+client/*.cjs
+server/test_output.txt
