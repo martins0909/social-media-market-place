@@ -153,4 +153,17 @@ Environment variables you will need to set in production:
 - Server (`server`): `MONGODB_URL`, `JWT_SECRET`, `PAYSTACK_SECRET` (optional), `FRONTEND_URL`
 - Frontend (Vite): `VITE_API_URL` (set to your backend HTTPS URL)
 
+### Deploy on Render
+
+This repository includes `render.yaml` for the two-service deployment:
+
+1. In Render, choose **New > Blueprint** and connect `martins0909/social-media-market-place`.
+2. Review the two services: `social-media-marketplace-api` and `social-media-marketplace-client`.
+3. Enter the secret values marked `sync: false`, including `MONGODB_URL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and payment credentials.
+4. Deploy the blueprint.
+5. Copy the API service URL into the client service as `VITE_API_URL`.
+6. Copy the client service URL into the API service as `FRONTEND_URL`, then redeploy both services.
+
+The API health check is available at `/api/health`. Render static sites publish the Vite build from `client/dist`.
+
 If you want me to also replace any other hard-coded API URLs or add CI/deployment files, tell me and I will apply those changes.

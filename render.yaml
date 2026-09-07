@@ -1,0 +1,49 @@
+services:
+  - type: web
+    name: social-media-marketplace-api
+    runtime: node
+    rootDir: server
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: MONGODB_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: ECRS_SECRET_KEY
+        sync: false
+      - key: ECRS_API_KEY
+        sync: false
+      - key: PAYSTACK_SECRET
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM
+        sync: false
+      - key: POCKETFI_SECRET
+        sync: false
+      - key: POCKETFI_API_KEY
+        sync: false
+      - key: POCKETFI_BASE_URL
+        value: https://api.pocketfi.ng
+      - key: POCKETFI_WEBHOOK_SECRET
+        sync: false
+      - key: POCKETFI_BUSINESS_ID
+        sync: false
+
+  - type: static
+    name: social-media-marketplace-client
+    buildCommand: npm install --prefix client && npm run build --prefix client
+    staticPublishPath: client/dist
+    envVars:
+      - key: VITE_API_URL
+        sync: false
