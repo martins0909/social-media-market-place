@@ -46,6 +46,10 @@ services:
     name: social-media-marketplace-client
     buildCommand: npm install --prefix client && npm run build --prefix client
     staticPublishPath: client/dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
     envVars:
       - key: VITE_API_URL
         sync: false
