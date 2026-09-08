@@ -18,9 +18,9 @@ services:
       - key: ADMIN_PASSWORD
         sync: false
       - key: FRONTEND_URL
-        sync: false
+        value: https://social-media-market-place-com.onrender.com
       - key: FRONTEND_URLS
-        sync: false
+        value: ""
       - key: ECRS_SECRET_KEY
         sync: false
       - key: ECRS_API_KEY

@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import express, { Request, Response, NextFunction } from "express";
-import cors from "cors";
+import cors, { CorsOptions } from "cors";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
@@ -13,9 +13,11 @@ import paymentsRouter from "./routes/payments";
 
 const app = express();
 // Allow local development plus one or more production frontend URLs.
-const configuredFrontendUrls = (process.env.FRONTEND_URLS || process.env.FRONTEND_URL || "")
+const configuredFrontendUrls = [process.env.FRONTEND_URL, process.env.FRONTEND_URLS]
+  .filter(Boolean)
+  .join(",")
   .split(",")
-  .map((url) => url.trim())
+  .map((url) => url.trim().replace(/\/$/, ""))
   .filter(Boolean);
 const allowedOrigins = Array.from(new Set([
   "http://localhost:8080",
@@ -26,7 +28,7 @@ const allowedOrigins = Array.from(new Set([
   ...configuredFrontendUrls,
 ]));
 
-app.use(cors({
+const corsOptions: CorsOptions = {
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin) || /^https?:\/\/localhost:\d+$/.test(origin)) {
       callback(null, true);
@@ -37,7 +39,10 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
-}));
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 // Preserve raw webhook payloads before JSON parsing runs for other routes.
 app.use('/api/payments/pocketfi/webhook', express.raw({ type: 'application/json' }));
