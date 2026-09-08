@@ -12,24 +12,30 @@ import { User, Admin, Cart, Payment, Product, CatalogProduct, PurchaseHistory, C
 import paymentsRouter from "./routes/payments";
 
 const app = express();
-// allow CORS from local dev and a production frontend URL set via env
-const FRONTEND_URL = process.env.FRONTEND_URL ?? "http://localhost:8080";
+// Allow local development plus one or more production frontend URLs.
+const configuredFrontendUrls = (process.env.FRONTEND_URLS || process.env.FRONTEND_URL || "")
+  .split(",")
+  .map((url) => url.trim())
+  .filter(Boolean);
+const allowedOrigins = Array.from(new Set([
+  "http://localhost:8080",
+  "http://localhost:8081",
+  "http://localhost:4001",
+  "http://localhost:4000",
+  "http://localhost:5173",
+  "https://social-media-market-place-1.onrender.com",
+  ...configuredFrontendUrls,
+  "https://victohs.com",
+  "https://www.victohs.com",
+  "https://viktohsstore.com",
+  "https://www.viktohsstore.com",
+  "https://logs-online.com",
+  "https://www.logs-online.com",
+  "https://logs-online.vercel.app",
+]));
+
 app.use(cors({
-  origin: [
-    FRONTEND_URL, 
-    'https://victohs.com',
-    'https://www.victohs.com',
-    'https://viktohsstore.com',
-    'https://www.viktohsstore.com',
-    'https://logs-online.com',
-    'https://www.logs-online.com',
-    'https://logs-online.vercel.app',
-    'http://localhost:8080', 
-    'http://localhost:8081', 
-    'http://localhost:4001', 
-    'http://localhost:4000',
-    'http://localhost:5173'
-  ],
+  origin: allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
