@@ -24,15 +24,8 @@ const allowedOrigins = Array.from(new Set([
   "http://localhost:4000",
   "http://localhost:5173",
   "https://social-media-market-place-1.onrender.com",
-  ...configuredFrontendUrls,
+  "https://social-media-market-place-com.onrender.com",
   "https://victohs.com",
-  "https://www.victohs.com",
-  "https://viktohsstore.com",
-  "https://www.viktohsstore.com",
-  "https://logs-online.com",
-  "https://www.logs-online.com",
-  "https://logs-online.vercel.app",
-]));
 
 app.use(cors({
   origin: (origin, callback) => {

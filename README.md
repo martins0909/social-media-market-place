@@ -151,7 +151,7 @@ npm run dev:full
 Environment variables you will need to set in production:
 
 - Server (`server`): `MONGODB_URL`, `JWT_SECRET`, `PAYSTACK_SECRET` (optional), `FRONTEND_URL`
-- Server CORS: set `FRONTEND_URL` to the deployed client URL, or use comma-separated `FRONTEND_URLS` for multiple client URLs.
+- Server CORS: set `FRONTEND_URL` to the deployed client URL, or use comma-separated `FRONTEND_URLS` for multiple client URLs. These values are read at runtime from Render.
 - Frontend (Vite): `VITE_API_URL` (set to your backend HTTPS URL)
 
 ### Deploy on Render
