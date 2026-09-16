@@ -793,7 +793,7 @@ app.get("/api/catalog", async (req: Request, res: Response) => {
       return res.json(mapped);
     }
 
-    // Public response: no serialNumbers. Provide availableStock only.
+    // Public response: include serial numbers with IDs/links for account checking, but never the actual log content.
     res.setHeader("Cache-Control", "public, max-age=30");
     const cacheKey = "catalog:public:v1";
     const cached = cacheGet<any[]>(cacheKey);
@@ -810,13 +810,12 @@ app.get("/api/catalog", async (req: Request, res: Response) => {
     const reqId = Math.random().toString(36).substring(7);
     activeCatalogFetch = (async () => {
       console.time(`Catalog fetch - ${reqId}`);
-      // Super fast query! No more array unwinding.
-      const products = await CatalogProduct.find({}, "-serialNumbers -image")
+      const products = await CatalogProduct.find({}, "-image")
         .sort({ createdAt: -1 })
         .lean()
         .exec();
-        
-      // Ensure frontend sees 'availableStock' property matching the cached count
+
+      // Ensure frontend sees 'availableStock' property matching the cached count and public serial info
       const mappedProducts = products.map((p: any) => ({
         id: p.id,
         name: p.name,
@@ -826,10 +825,20 @@ app.get("/api/catalog", async (req: Request, res: Response) => {
         category: p.category,
         createdAt: p.createdAt,
         availableStock: p.cachedAvailableStock || 0,
+        serialNumbers: Array.isArray(p.serialNumbers)
+          ? p.serialNumbers
+              .filter((s: any) => !s.isUsed)
+              .map((s: any) => ({
+                id: s.id,
+                displayId: s.displayId,
+                url: s.url,
+                isUsed: s.isUsed,
+              }))
+          : [],
       }));
 
       console.timeEnd(`Catalog fetch - ${reqId}`);
-      
+
       cacheSet(cacheKey, mappedProducts, 60_000); // 60 seconds Cache
       return mappedProducts;
     })();
@@ -1026,10 +1035,11 @@ app.post("/api/purchase-history", async (req: Request, res: Response) => {
 // Complete purchase (deduct balance, update product, create history)
 app.post("/api/purchase/complete", async (req: Request, res: Response) => {
   try {
-    const { userId, productId, quantity } = req.body as {
+    const { userId, productId, quantity, serialIds } = req.body as {
       userId?: string;
       productId?: string;
       quantity?: number;
+      serialIds?: string[];
     };
     
     console.log("Purchase request received:", { userId, productId, quantity });
@@ -1078,9 +1088,29 @@ app.post("/api/purchase/complete", async (req: Request, res: Response) => {
           throw Object.assign(new Error("Product not found"), { statusCode: 404 });
         }
 
-        const qty = Number(quantity);
+        let qty = Number(quantity);
         if (!Number.isFinite(qty) || qty <= 0) {
           throw Object.assign(new Error("Invalid quantity"), { statusCode: 400 });
+        }
+
+        const serials = Array.isArray(catalogProduct.serialNumbers) ? catalogProduct.serialNumbers : [];
+        const available = serials.filter((s: any) => !s.isUsed);
+
+        let chosen: any[] = [];
+        if (Array.isArray(serialIds) && serialIds.length > 0) {
+          // Specific serial IDs selected by the user
+          chosen = serials.filter((s: any) => serialIds.includes(s.id) && !s.isUsed);
+          if (chosen.length !== serialIds.length) {
+            throw Object.assign(new Error("One or more selected accounts are no longer available"), { statusCode: 400 });
+          }
+          qty = chosen.length;
+        } else {
+          // Fallback: pick the first available serials
+          chosen = available.slice(0, qty);
+        }
+
+        if (available.length < qty) {
+          throw Object.assign(new Error(`Only ${available.length} units available in stock.`), { statusCode: 400 });
         }
 
         const totalPrice = (catalogProduct.price || 0) * qty;
@@ -1089,14 +1119,6 @@ app.post("/api/purchase/complete", async (req: Request, res: Response) => {
           throw Object.assign(new Error("Insufficient balance"), { statusCode: 400 });
         }
 
-        const serials = Array.isArray(catalogProduct.serialNumbers) ? catalogProduct.serialNumbers : [];
-        const available = serials.filter((s: any) => !s.isUsed);
-        if (available.length < qty) {
-          throw Object.assign(new Error(`Only ${available.length} units available in stock.`), { statusCode: 400 });
-        }
-
-        // Assign serials server-side (never expose whole pool to the client)
-        const chosen = available.slice(0, qty);
         const assignedSerials = chosen.map((s: any) => s.serial);
         const now = new Date();
         for (const s of serials as any[]) {

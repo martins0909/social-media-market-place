@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { apiFetch, catalogAPI, purchaseHistoryAPI, catalogCategoriesAPI, warmBackend } from "@/lib/api";
-import { Banknote, ChevronDown, History, Copy, Home, Menu, LogIn, FileText, Headphones, MessageCircle, Wallet, Eye, EyeOff, CreditCard, Zap } from "lucide-react";
+import { Banknote, ChevronDown, History, Copy, Home, Menu, LogIn, FileText, Headphones, MessageCircle, Wallet, Eye, EyeOff, CreditCard, Zap, List, Check } from "lucide-react";
 import bannerImg from "@/assets/ban.jpg";
 import bannerLog1 from "@/assets/bannerlog1.jpg";
 import bannerLog2 from "@/assets/bannerlog2.jpg";
@@ -20,7 +20,9 @@ import logo from "@/assets/pics (2).png";
 
 interface SerialNumber {
   id: string;
+  displayId?: string;
   serial: string;
+  url?: string;
   isUsed: boolean;
   usedBy?: string;
   usedAt?: string;
@@ -128,6 +130,9 @@ const Shop = () => {
 
   // New: Purchase summary dialog state
   const [showPurchaseSummaryDialog, setShowPurchaseSummaryDialog] = useState(false);
+  const [descriptionProduct, setDescriptionProduct] = useState<Product | null>(null);
+  const [expandedAccounts, setExpandedAccounts] = useState<Record<string, boolean>>({});
+  const [selectedAccountIds, setSelectedAccountIds] = useState<Record<string, string[]>>({});
   const [showManualFundsDialog, setShowManualFundsDialog] = useState(false);
   const [showPaymentMethodDialog, setShowPaymentMethodDialog] = useState(false);
   const [showQuickPayDetailsDialog, setShowQuickPayDetailsDialog] = useState(false);
@@ -294,6 +299,94 @@ const Shop = () => {
     setShowBuyDialog(true);
   };
 
+  const handleBuySelectedAccounts = async (product: Product) => {
+    if (!user) return;
+    const selectedIds = selectedAccountIds[product.id] || [];
+    if (selectedIds.length === 0) {
+      toast.error("Please select at least one account");
+      return;
+    }
+
+    const serialsWithUrl = (product.serialNumbers || []).filter(s => selectedIds.includes(s.id) && s.url);
+    if (serialsWithUrl.length !== selectedIds.length) {
+      toast.error("Selected accounts must have a check link");
+      return;
+    }
+
+    const totalPrice = product.price * selectedIds.length;
+    if (Math.max(0, user.balance || 0) < totalPrice) {
+      toast.error("Insufficient balance. Please add funds to your wallet.");
+      return;
+    }
+
+    setIsPurchasing(true);
+    try {
+      const result = await purchaseHistoryAPI.completePurchase({
+        userId: user.id,
+        productId: product.id,
+        quantity: selectedIds.length,
+        serialIds: selectedIds,
+      });
+
+      const updatedUser: User = { ...user, balance: result.newBalance };
+      setUser(updatedUser);
+      localStorage.setItem("currentUser", JSON.stringify(updatedUser));
+
+      const usersRaw = JSON.parse(localStorage.getItem("users") || "[]") as User[];
+      const updatedUsers = usersRaw.map(u => u.id === user.id ? updatedUser : u);
+      localStorage.setItem("users", JSON.stringify(updatedUsers));
+
+      const updatedProducts = products.map(p => {
+        if (p.id === product.id) {
+          return {
+            ...p,
+            availableStock: typeof result.updatedProduct?.availableStock === "number"
+              ? result.updatedProduct.availableStock
+              : Math.max(0, (p.availableStock || 0) - selectedIds.length),
+            serialNumbers: (p.serialNumbers || []).filter(s => !selectedIds.includes(s.id))
+          };
+        }
+        return p;
+      });
+      setProducts(updatedProducts);
+
+      // Clear selections for this product
+      setSelectedAccountIds(prev => ({ ...prev, [product.id]: [] }));
+
+      const history = await purchaseHistoryAPI.getByUserId(user.id);
+      setPurchaseHistory(history.map(h => ({
+        id: h.productId,
+        name: h.name,
+        description: h.description,
+        price: h.price,
+        image: h.image,
+        category: h.category,
+        quantity: h.quantity,
+        assignedSerials: h.assignedSerials,
+        purchaseDate: h.purchaseDate.toString()
+      })));
+
+      setPurchaseSummaryData({
+        product,
+        quantity: selectedIds.length,
+        serials: result.assignedSerials || [],
+        balanceBefore: Math.max(0, user.balance || 0),
+        balanceAfter: result.newBalance
+      });
+      setShowPurchaseSummaryDialog(true);
+    } catch (error: unknown) {
+      console.error("Error buying selected accounts:", error);
+      const errorMessage = error && typeof error === 'object' && 'response' in error
+        ? (error as { response?: { data?: { error?: string } } }).response?.data?.error
+        : error instanceof Error
+        ? error.message
+        : "Failed to complete purchase. Please try again.";
+      toast.error(errorMessage);
+    } finally {
+      setIsPurchasing(false);
+    }
+  };
+
   const handleCancelPurchase = () => {
     setShowBuyDialog(false);
     setSelectedProduct(null);
@@ -344,11 +437,13 @@ const Shop = () => {
 
       const updatedProducts = products.map(p => {
         if (p.id === selectedProduct.id) {
+          const assigned = result.assignedSerials || [];
           return {
             ...p,
             availableStock: typeof result.updatedProduct?.availableStock === "number"
               ? result.updatedProduct.availableStock
-              : (typeof p.availableStock === "number" ? Math.max(0, p.availableStock - purchaseQuantity) : p.availableStock)
+              : (typeof p.availableStock === "number" ? Math.max(0, p.availableStock - purchaseQuantity) : p.availableStock),
+            serialNumbers: (p.serialNumbers || []).filter(s => !assigned.includes(s.serial))
           };
         }
         return p;
@@ -768,6 +863,252 @@ const Shop = () => {
     }
   };
 
+  const getSerialDisplayId = (serial: SerialNumber): string => {
+    if (serial.displayId) return serial.displayId;
+    // Stable numeric fallback derived from the serial UUID
+    let hash = 0;
+    for (let i = 0; i < serial.id.length; i++) {
+      hash = ((hash << 5) - hash) + serial.id.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash % 900000 + 100000).toString();
+  };
+
+  const ProductCard = ({ product, index }: { product: Product; index: number }) => {
+    const availableStock = typeof product.availableStock === "number"
+      ? product.availableStock
+      : (product.serialNumbers || []).filter(s => !s.isUsed).length;
+    const isOutOfStock = availableStock === 0;
+    const accountsExpanded = !!expandedAccounts[product.id];
+    const selectedIds = selectedAccountIds[product.id] || [];
+    const visibleSerials = (product.serialNumbers || []).filter(s => !s.isUsed && s.url);
+
+    const toggleAccountSelection = (serialId: string) => {
+      setSelectedAccountIds(prev => {
+        const current = prev[product.id] || [];
+        const next = current.includes(serialId)
+          ? current.filter(id => id !== serialId)
+          : [...current, serialId];
+        return { ...prev, [product.id]: next };
+      });
+    };
+
+    const openSerialUrl = (url: string) => {
+      if (!url) return;
+      window.open(url, "_blank", "noopener,noreferrer");
+    };
+
+    const copySerialUrl = async (url: string) => {
+      if (!url) return;
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success("Link copied");
+      } catch {
+        toast.error("Failed to copy link");
+      }
+    };
+
+    return (
+      <>
+        <Card
+          key={product.id}
+          className="bg-white dark:bg-black shadow-lg border border-gray-100 dark:border-gray-800 mx-2 md:mx-0 rounded-2xl overflow-hidden animate-in fade-in slide-in-from-bottom group"
+          style={{ animationDelay: `${index * 50}ms` }}
+        >
+          <CardContent className="p-0">
+            {/* Mobile Layout */}
+            <div className="flex flex-col p-4 md:hidden gap-3">
+              <div className="flex items-start gap-3">
+                <div className="relative overflow-hidden rounded-xl flex-shrink-0">
+                  <img
+                    src={product.image}
+                    alt={product.name}
+                    className="w-16 h-16 object-cover rounded-xl"
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-base leading-tight text-gray-900 dark:text-gray-100 break-words">
+                    {product.name}
+                  </h3>
+                </div>
+              </div>
+
+              <div className="text-2xl font-black text-gray-900 dark:text-white">
+                ₦{product.price.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDescriptionProduct(product)}
+                  className="rounded-full border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 h-9 px-3"
+                >
+                  <FileText className="h-4 w-4 mr-1.5" />
+                  Description
+                </Button>
+                <span className={`text-sm font-semibold ${isOutOfStock ? "text-red-500" : "text-[#FFC107]"}`}>
+                  {isOutOfStock ? "0 in stock" : `${availableStock} in stock`}
+                </span>
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setExpandedAccounts(prev => ({ ...prev, [product.id]: !prev[product.id] }))}
+                className="rounded-full border-amber-500 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950 h-10 w-full"
+              >
+                <List className="h-4 w-4 mr-2" />
+                View Accounts ({availableStock})
+              </Button>
+
+              <Button
+                onClick={() => handleBuyClick(product)}
+                disabled={isOutOfStock}
+                className={`h-11 w-full rounded-full text-white font-bold shadow-md ${
+                  isOutOfStock
+                    ? "bg-gray-400 cursor-not-allowed"
+                    : "bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
+                }`}
+              >
+                <ShoppingCart className="h-4 w-4 mr-2" />
+                {isOutOfStock ? "Out of Stock" : "Buy Now"}
+              </Button>
+            </div>
+
+            {/* Desktop Layout */}
+            <div className="hidden md:flex md:items-center gap-4 md:p-4 min-w-0">
+              {/* Small Product Image */}
+              <div className="relative overflow-hidden rounded-lg flex-shrink-0">
+                <div className="absolute inset-0 bg-gradient-to-br from-[#4d9cff]/0 to-[#4d9cff]/0 group-hover:from-[#4d9cff]/20 group-hover:to-[#4d9cff]/20 transition-all duration-300 z-10"></div>
+                <img
+                  src={product.image}
+                  alt={product.name}
+                  className="w-16 h-16 object-cover rounded-lg group-hover:scale-105 transition-transform duration-300"
+                />
+              </div>
+
+              {/* Product Info */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start gap-2 mb-0.5 md:mb-1">
+                  <Badge variant="outline" className="px-1.5 md:px-2 py-0.5 text-xs tracking-wide bg-gradient-to-r from-[#d5e5ff] to-[#d5e5ff] text-[#0d4f9f] border-none flex-shrink-0 dark:from-[#0B0F14] dark:to-[#0B0F14] dark:text-[#4d9cff]">
+                    {product.category}
+                  </Badge>
+                  {availableStock > 0 && (
+                    <Badge variant="outline" className="px-1.5 py-0.5 text-[10px] bg-[#e8f1ff] text-[#0d4f9f] border-[#b0cdf5] dark:bg-[#0B0F14] dark:text-[#4d9cff] dark:border-[#0a3d7c]">
+                      {availableStock} in stock
+                    </Badge>
+                  )}
+                  {isOutOfStock && (
+                    <Badge variant="outline" className="px-1.5 py-0.5 text-[10px] bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800">
+                      Out of stock
+                    </Badge>
+                  )}
+                </div>
+                <h3 className="font-bold text-sm md:text-base lg:text-lg mb-0.5 md:mb-1 bg-clip-text text-transparent bg-gradient-to-r from-[#0d4f9f] to-[#0a3d7c] dark:from-[#4d9cff] dark:to-[#1565C0] whitespace-normal break-words leading-tight md:truncate flex-1 min-w-0">
+                  {product.name}
+                </h3>
+              </div>
+
+              {/* Desktop Layout: Description, Price, Button */}
+              <div className="hidden md:flex md:items-center md:gap-4 md:flex-1">
+                <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-5 flex-1">{product.description}</p>
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-[#1565C0] to-[#0d4f9f] dark:from-[#4d9cff] dark:to-[#1565C0]">
+                      ₦{product.price.toFixed(2)}
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() => handleBuyClick(product)}
+                    disabled={isOutOfStock}
+                    className={`h-9 px-4 ${isOutOfStock ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#1565C0] hover:bg-[#0d4f9f]'} text-white font-semibold shadow-lg hover:shadow-xl transition-all duration-300 rounded-lg text-sm`}
+                  >
+                    <ShoppingCart className="h-4 w-4 mr-2" />
+                    {isOutOfStock ? 'Out of Stock' : 'Buy Now'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Bulk Purchase Section (mobile only, shown below product card) */}
+        {accountsExpanded && (
+          <div className="md:hidden mx-2 mt-3 mb-6 bg-white dark:bg-black rounded-2xl border border-gray-100 dark:border-gray-800 p-4 shadow-md animate-in fade-in slide-in-from-top duration-200">
+            <h4 className="text-lg font-bold text-gray-900 dark:text-white">Bulk Purchase</h4>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+              Select accounts and buy multiple at once
+            </p>
+            <Button
+              onClick={() => handleBuySelectedAccounts(product)}
+              disabled={selectedIds.length === 0 || isPurchasing}
+              className="w-full h-11 rounded-full bg-[#0B0F14] dark:bg-[#1565C0] hover:bg-gray-800 dark:hover:bg-[#0d4f9f] text-white font-bold mb-2"
+            >
+              <ShoppingCart className="h-4 w-4 mr-2" />
+              Buy Selected Accounts
+            </Button>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+              {selectedIds.length} account{selectedIds.length === 1 ? "" : "s"} selected
+            </p>
+
+            <div className="space-y-2">
+              {visibleSerials.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4">No checkable accounts available</p>
+              ) : (
+                visibleSerials.map(serial => {
+                  const displayId = getSerialDisplayId(serial);
+                  const isSelected = selectedIds.includes(serial.id);
+                  return (
+                    <div
+                      key={serial.id}
+                      className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-[#09090b]"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleAccountSelection(serial.id)}
+                        className={`flex-shrink-0 w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+                          isSelected
+                            ? "bg-[#1565C0] border-[#1565C0] text-white"
+                            : "border-gray-300 dark:border-gray-600 bg-white dark:bg-black"
+                        }`}
+                        aria-label={isSelected ? "Deselect account" : "Select account"}
+                      >
+                        {isSelected && <Check className="h-3.5 w-3.5" />}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-sm text-gray-900 dark:text-white">Account</p>
+                        <p className="font-bold text-sm text-[#1565C0] dark:text-[#4d9cff]">#{displayId}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openSerialUrl(serial.url || "")}
+                        disabled={!serial.url}
+                        className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400 disabled:opacity-40"
+                        aria-label="Open link"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => copySerialUrl(serial.url || "")}
+                        disabled={!serial.url}
+                        className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400 disabled:opacity-40"
+                        aria-label="Copy link"
+                      >
+                        <Copy className="h-4 w-4" />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+      </>
+    );
+  };
+
   if (!user) return null;
 
   return (
@@ -840,6 +1181,44 @@ const Shop = () => {
               Got it, thanks!
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Description Dialog */}
+      <Dialog open={!!descriptionProduct} onOpenChange={(open) => { if (!open) setDescriptionProduct(null); }}>
+        <DialogContent className="sm:max-w-md w-[90vw] md:w-full bg-white dark:bg-black rounded-2xl border-2 border-white/60 dark:border-gray-800 p-0 overflow-hidden">
+          <DialogHeader className="p-4 pb-2 border-b border-gray-100 dark:border-gray-800">
+            <div className="flex items-start gap-3">
+              <img
+                src={descriptionProduct?.image}
+                alt={descriptionProduct?.name}
+                className="w-14 h-14 rounded-xl object-cover flex-shrink-0"
+              />
+              <div className="flex-1 min-w-0">
+                <DialogTitle className="text-base font-bold text-gray-900 dark:text-white leading-tight">
+                  {descriptionProduct?.name}
+                </DialogTitle>
+                <p className="text-sm text-[#1565C0] dark:text-[#4d9cff] font-semibold mt-0.5">
+                  ₦{descriptionProduct?.price.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
+            </div>
+          </DialogHeader>
+          <div className="p-4">
+            <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
+              {descriptionProduct?.description}
+            </p>
+          </div>
+          <DialogFooter className="p-4 pt-0">
+            <Button
+              variant="outline"
+              onClick={() => setDescriptionProduct(null)}
+              className="w-full rounded-full border-gray-300 dark:border-gray-700"
+            >
+              <X className="h-4 w-4 mr-2" />
+              Cancel
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -1111,121 +1490,9 @@ const Shop = () => {
                           {/* 'See More' button removed as requested */}
                         </div>
                         <div className="space-y-3 md:space-y-4">
-                          {displayedProducts.map((product, index) => {
-                            const availableStock = typeof product.availableStock === "number"
-                              ? product.availableStock
-                              : (product.serialNumbers || []).filter(s => !s.isUsed).length;
-                            
-                            return (
-                            <Card 
-                              key={product.id} 
-                              className="bg-white/90 backdrop-blur-xl shadow-lg border-2 border-l-0 border-r-0 md:border-l-2 md:border-r-2 border-white/60 hover:shadow-xl transition-all duration-300 group animate-in fade-in slide-in-from-bottom dark:bg-black/90 dark:border-gray-800 mx-2 md:mx-0 rounded-lg md:rounded-lg overflow-hidden"
-                              style={{ animationDelay: `${index * 50}ms` }}
-                            >
-                              <CardContent className="p-0">
-                                <div className="flex flex-col md:flex-row md:items-center gap-0 md:gap-4 md:p-4 p-3 min-w-0">
-                                  {/* Top Section: Image and Info (Mobile Full Width) */}
-                                  <div className="flex items-start gap-3 p-0 md:p-0 md:flex-1 min-w-0 w-full">
-                                    {/* Small Product Image */}
-                                    <div className="relative overflow-hidden rounded-lg flex-shrink-0">
-                                      <div className="absolute inset-0 bg-gradient-to-br from-[#4d9cff]/0 to-[#4d9cff]/0 group-hover:from-[#4d9cff]/20 group-hover:to-[#4d9cff]/20 transition-all duration-300 z-10"></div>
-                                      <img
-                                        src={product.image}
-                                        alt={product.name}
-                                        className="w-12 h-12 md:w-16 md:h-16 object-cover rounded-lg group-hover:scale-105 transition-transform duration-300"
-                                      />
-                                    </div>
-                                    
-                                    {/* Product Info */}
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-start gap-2 mb-0.5 md:mb-1">
-                                        <Badge variant="outline" className="px-1.5 md:px-2 py-0.5 text-xs tracking-wide bg-gradient-to-r from-[#d5e5ff] to-[#d5e5ff] text-[#0d4f9f] border-none flex-shrink-0 dark:from-[#0B0F14] dark:to-[#0B0F14] dark:text-[#4d9cff]">
-                                          {product.category}
-                                        </Badge>
-                                        {availableStock > 0 && (
-                                          <Badge variant="outline" className="hidden md:inline-flex px-1.5 py-0.5 text-[10px] bg-[#e8f1ff] text-[#0d4f9f] border-[#b0cdf5] dark:bg-[#0B0F14] dark:text-[#4d9cff] dark:border-[#0a3d7c]">
-                                              {availableStock} in stock
-                                            </Badge>
-                                          )}
-                                        {availableStock === 0 && (
-                                          <Badge variant="outline" className="hidden md:inline-flex px-1.5 py-0.5 text-[10px] bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800">
-                                            Out of stock
-                                          </Badge>
-                                        )}
-                                      </div>
-                                      <div className="flex items-center justify-between gap-3 w-full min-w-0">
-                                        <h3 className="font-bold text-sm md:text-base lg:text-lg mb-0.5 md:mb-1 bg-clip-text text-transparent bg-gradient-to-r from-[#0d4f9f] to-[#0a3d7c] dark:from-[#4d9cff] dark:to-[#1565C0] whitespace-normal break-words leading-tight md:truncate flex-1 min-w-0">{product.name}</h3>
-                                      </div>
-                                    </div>
-                                    
-                                    {/* Price (Mobile - Right Side) */}
-                                    <div className="text-right flex-shrink-0 md:hidden">
-                                     
-                                      {/* {availableStock === 0 && (
-                                        <div className="mt-0.5">
-                                          <Badge variant="outline" className="px-1.5 py-0.5 text-[10px] bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800">
-                                            Out of stock
-                                          </Badge>
-                                        </div>
-                                      )} */}
-                                    </div>
-                                  </div>
-
-                                  {/* Description (Mobile Full Width) */}
-                                  <div className="px-0 pb-3 md:hidden min-w-0">
-                                    <p className="text-xs text-gray-600 dark:text-gray-400 whitespace-normal break-words leading-relaxed">{product.description}</p>
-                                  </div>
-
-                                  {/* Desktop Layout: Description, Price, Button */}
-                                  <div className="hidden md:flex md:items-center md:gap-4 md:flex-1">
-                                    <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-5 flex-1">{product.description}</p>
-                                    <div className="flex flex-col items-end gap-2 shrink-0">
-                                      <div className="text-right flex-shrink-0">
-                                        <p className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-[#1565C0] to-[#0d4f9f] dark:from-[#4d9cff] dark:to-[#1565C0]">
-                                          ₦{product.price.toFixed(2)}
-                                        </p>
-                                      </div>
-                                      <Button 
-                                        onClick={() => handleBuyClick(product)}
-                                        disabled={availableStock === 0}
-                                        className={`h-9 px-4 ${availableStock === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#1565C0] hover:bg-[#0d4f9f]'} text-white font-semibold shadow-lg hover:shadow-xl transition-all duration-300 rounded-lg text-sm`}
-                                      >
-                                        <ShoppingCart className="h-4 w-4 mr-2" />
-                                        {availableStock === 0 ? 'Out of Stock' : 'Buy Now'}
-                                      </Button>
-                                    </div>
-                                  </div>
-
-                                  {/* Buy Button and Price (Mobile Full Width) */}
-                                  <div className="pl-0 pr-0 pb-3 md:p-0 md:flex-shrink-0 md:hidden flex flex-wrap items-start justify-between gap-2 min-w-0">
-                                    <Button 
-                                      onClick={() => handleBuyClick(product)}
-                                      disabled={availableStock === 0}
-                                      className={`h-8 px-3 shrink-0 ${availableStock === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#1565C0] hover:bg-[#0d4f9f]'} text-white font-semibold shadow-lg hover:shadow-xl transition-all duration-300 rounded-lg text-xs`}
-                                    >
-                                      <ShoppingCart className="h-3 w-3 mr-1" />
-                                      {availableStock === 0 ? 'Out of Stock' : 'Buy Now'}
-                                    </Button>
-                                    <div className="flex flex-col items-end min-w-0 max-w-full">
-                                      <span className="text-base font-bold bg-clip-text text-transparent bg-gradient-to-r from-[#1565C0] to-[#4d9cff] dark:from-[#4d9cff] dark:to-[#8fb5e8] break-all text-right leading-tight">
-                                        ₦{product.price.toFixed(2)}
-                                      </span>
-                                      {availableStock > 0 ? (
-                                        <Badge variant="outline" className="mt-1 px-1.5 py-0.5 text-[10px] bg-[#e8f1ff] text-[#0d4f9f] border-[#b0cdf5] dark:bg-[#0B0F14] dark:text-[#4d9cff] dark:border-[#0a3d7c] block whitespace-normal break-words text-center max-w-[110px]">
-                                          {availableStock} in stock
-                                        </Badge>
-                                      ) : (
-                                        <Badge variant="outline" className="mt-1 px-1.5 py-0.5 text-[10px] bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800 block whitespace-normal break-words text-center max-w-[110px]">
-                                          Out of stock
-                                        </Badge>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              </CardContent>
-                            </Card>
-                            );
-                          })}
+                          {displayedProducts.map((product, index) => (
+                            <ProductCard key={product.id} product={product} index={index} />
+                          ))}
                         </div>
                       </div>
                       );
@@ -1247,125 +1514,10 @@ const Shop = () => {
                             {/* 'See More' button removed as requested */}
                           </div>
                           <div className="space-y-3 md:space-y-4">
-                            {displayedProducts.map((product, index) => {
-                        const availableStock = typeof product.availableStock === "number"
-                          ? product.availableStock
-                          : (product.serialNumbers || []).filter(s => !s.isUsed).length;
-                        
-                        return (
-                        <Card 
-                          key={product.id} 
-                          className="bg-white/90 backdrop-blur-xl shadow-lg border-2 border-l-0 border-r-0 md:border-l-2 md:border-r-2 border-white/60 hover:shadow-xl transition-all duration-300 group animate-in fade-in slide-in-from-bottom dark:bg-black/90 dark:border-gray-800 mx-2 md:mx-0 rounded-lg md:rounded-lg overflow-hidden"
-                          style={{ animationDelay: `${index * 50}ms` }}
-                        >
-                          <CardContent className="p-0">
-                            <div className="flex flex-col md:flex-row md:items-center gap-0 md:gap-4 md:p-4 p-3 min-w-0">
-                              {/* Top Section: Image and Info (Mobile Full Width) */}
-                              <div className="flex items-start gap-3 p-0 md:p-0 md:flex-1 min-w-0 w-full">
-                                {/* Small Product Image */}
-                                <div className="relative overflow-hidden rounded-lg flex-shrink-0">
-                                  <div className="absolute inset-0 bg-gradient-to-br from-[#4d9cff]/0 to-[#4d9cff]/0 group-hover:from-[#4d9cff]/20 group-hover:to-[#4d9cff]/20 transition-all duration-300 z-10"></div>
-                                  <img
-                                    src={product.image}
-                                    alt={product.name}
-                                    className="w-12 h-12 md:w-16 md:h-16 object-cover rounded-lg group-hover:scale-105 transition-transform duration-300"
-                                  />
-                                </div>
-                                
-                                {/* Product Info */}
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-start gap-2 mb-0.5 md:mb-1">
-                                    <Badge variant="outline" className="px-1.5 md:px-2 py-0.5 text-xs tracking-wide bg-gradient-to-r from-[#d5e5ff] to-[#d5e5ff] text-[#0d4f9f] border-none flex-shrink-0 dark:from-[#0B0F14] dark:to-[#0B0F14] dark:text-[#4d9cff]">
-                                      {product.category}
-                                    </Badge>
-                                    {availableStock > 0 && (
-                                      <Badge variant="outline" className="hidden md:inline-flex px-1.5 py-0.5 text-[10px] bg-[#e8f1ff] text-[#0d4f9f] border-[#b0cdf5] dark:bg-[#0B0F14] dark:text-[#4d9cff] dark:border-[#0a3d7c]">
-                                        {availableStock} in stock
-                                      </Badge>
-                                    )}
-                                    {availableStock === 0 && (
-                                      <Badge variant="outline" className="hidden md:inline-flex px-1.5 py-0.5 text-[10px] bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800">
-                                        Out of stock
-                                      </Badge>
-                                    )} 
-                                  </div>
-                                  <h3 className="font-bold text-sm md:text-base lg:text-lg mb-0.5 md:mb-1 bg-clip-text text-transparent bg-gradient-to-r from-[#0d4f9f] to-[#0a3d7c] dark:from-[#4d9cff] dark:to-[#1565C0] whitespace-normal break-words leading-tight md:truncate">{product.name}</h3>
-                                  {/* Desktop-only stock line under product name to avoid name overflow */}
-                                  {availableStock > 0 ? (
-                                    <div className="hidden md:block mt-1">
-                                      <Badge variant="outline" className="text-[11px] px-1.5 py-0.5 bg-[#e8f1ff] text-[#0d4f9f] border-[#b0cdf5] dark:bg-[#0B0F14] dark:text-[#4d9cff] dark:border-[#0a3d7c]">
-                                        {availableStock} in stock
-                                      </Badge>
-                                    </div>
-                                  ) : (
-                                    <div className="hidden md:block mt-1">
-                                      <Badge variant="outline" className="text-[11px] px-1.5 py-0.5 bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800">
-                                        Out of stock
-                                      </Badge>
-                                    </div>
-                                  )}
-                                </div>
-                                
-                                {/* Price (Mobile) - moved to buy button area to avoid duplication */}
-                                <div className="hidden" />
-                              </div>
-
-                              {/* Description (Mobile Full Width) */}
-                              <div className="px-0 pb-3 md:hidden min-w-0">
-                                <p className="text-xs text-gray-600 dark:text-gray-400 whitespace-normal break-words leading-relaxed">{product.description}</p>
-                              </div>
-
-                              {/* Desktop Layout: Description, Price, Button */}
-                              <div className="hidden md:flex md:items-center md:gap-4 md:flex-1">
-                                <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-5 flex-1">{product.description}</p>
-                                <div className="flex flex-col items-end gap-2 shrink-0">
-                                  <div className="text-right flex-shrink-0">
-                                    <p className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-[#1565C0] to-[#0d4f9f] dark:from-[#4d9cff] dark:to-[#1565C0]">
-                                      ₦{product.price.toFixed(2)}
-                                    </p>
-                                  </div>
-                                  <Button 
-                                    onClick={() => handleBuyClick(product)}
-                                    disabled={availableStock === 0}
-                                    className={`h-9 px-4 ${availableStock === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#1565C0] hover:bg-[#0d4f9f]'} text-white font-semibold shadow-lg hover:shadow-xl transition-all duration-300 rounded-lg text-sm`}
-                                  >
-                                    <ShoppingCart className="h-4 w-4 mr-2" />
-                                    {availableStock === 0 ? 'Out of Stock' : 'Buy Now'}
-                                  </Button>
-                                </div>
-                              </div>
-
-                              {/* Buy Button and Price (Mobile Full Width) */}
-                              <div className="pl-0 pr-0 pb-3 md:p-0 md:flex-shrink-0 md:hidden flex flex-wrap items-start justify-between gap-2 min-w-0">
-                                <Button 
-                                  onClick={() => handleBuyClick(product)}
-                                  disabled={availableStock === 0}
-                                  className={`h-8 px-3 shrink-0 ${availableStock === 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#1565C0] hover:bg-[#0d4f9f]'} text-white font-semibold shadow-lg hover:shadow-xl transition-all duration-300 rounded-lg text-xs`}
-                                >
-                                  <ShoppingCart className="h-3 w-3 mr-1" />
-                                  {availableStock === 0 ? 'Out of Stock' : 'Buy Now'}
-                                </Button>
-                                <div className="flex flex-col items-end min-w-0 max-w-full">
-                                  <span className="text-base font-bold bg-clip-text text-transparent bg-gradient-to-r from-[#1565C0] to-[#0d4f9f] dark:from-[#4d9cff] dark:to-[#1565C0] break-all text-right leading-tight">
-                                    ₦{product.price.toFixed(2)}
-                                  </span>
-                                  {availableStock > 0 ? (
-                                    <Badge variant="outline" className="mt-1 px-1.5 py-0.5 text-[10px] bg-[#e8f1ff] text-[#0d4f9f] border-[#b0cdf5] dark:bg-[#0B0F14] dark:text-[#4d9cff] dark:border-[#0a3d7c] block whitespace-normal break-words text-center max-w-[110px]">
-                                      {availableStock} in stock
-                                    </Badge>
-                                  ) : (
-                                    <Badge variant="outline" className="mt-1 px-1.5 py-0.5 text-[10px] bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800 block whitespace-normal break-words text-center max-w-[110px]">
-                                      Out of stock
-                                    </Badge>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                        );
-                      })}
-                    </div>
+                            {displayedProducts.map((product, index) => (
+                              <ProductCard key={product.id} product={product} index={index} />
+                            ))}
+                          </div>
                         </>
                       );
                     })()}

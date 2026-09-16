@@ -75,7 +75,9 @@ export interface IProduct extends Document {
 // Serial Number interface for catalog products
 export interface ISerialNumber {
   id: string;
+  displayId?: string; // e.g. #242945 shown to customers
   serial: string;
+  url?: string; // link customer can check before purchase
   isUsed: boolean;
   usedBy?: string;
   usedAt?: Date;
@@ -192,7 +194,9 @@ const ProductSchema = new Schema<IProduct>({
 // Serial Number Schema
 const SerialNumberSchema = new Schema<ISerialNumber>({
   id: { type: String, required: true },
+  displayId: { type: String },
   serial: { type: String, required: true },
+  url: { type: String },
   isUsed: { type: Boolean, default: false },
   usedBy: { type: String },
   usedAt: { type: Date },

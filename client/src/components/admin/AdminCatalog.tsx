@@ -5,7 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Trash2, Plus, Package, Image as ImageIcon, Database, Hash, Edit2, ChevronDown, RefreshCw } from "lucide-react";
+import { Trash2, Plus, Package, Image as ImageIcon, Database, Hash, Edit2, ChevronDown, RefreshCw, Link2 } from "lucide-react";
 import Papa from "papaparse";
 import {
   Dialog,
@@ -19,7 +19,9 @@ import { catalogAPI, catalogCategoriesAPI } from "@/lib/api";
 
 interface SerialNumber {
   id: string;
+  displayId?: string;
   serial: string;
+  url?: string;
   isUsed: boolean;
   usedBy?: string; // user email
   usedAt?: string;
@@ -73,6 +75,9 @@ export default function AdminCatalog() {
   const [serialDialogOpen, setSerialDialogOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<CatalogProduct | null>(null);
   const [newSerial, setNewSerial] = useState("");
+  const [newSerialUrl, setNewSerialUrl] = useState("");
+  const [editingSerialId, setEditingSerialId] = useState<string | null>(null);
+  const [editingSerialUrl, setEditingSerialUrl] = useState("");
   const [showImportBanner, setShowImportBanner] = useState(false);
   const [importCount, setImportCount] = useState(0);
   const [uploadingCSV, setUploadingCSV] = useState(false);
@@ -389,6 +394,17 @@ export default function AdminCatalog() {
     setSerialDialogOpen(true);
   };
 
+  const generateDisplayId = (existing: SerialNumber[] = []): string => {
+    let id = "";
+    let attempts = 0;
+    const existingIds = new Set(existing.map(s => s.displayId).filter(Boolean));
+    do {
+      id = Math.floor(100000 + Math.random() * 900000).toString();
+      attempts++;
+    } while (existingIds.has(id) && attempts < 100);
+    return id;
+  };
+
   const addSerialNumber = async () => {
     if (!selectedProduct || !newSerial.trim()) {
       toast.error("Serial number required");
@@ -402,17 +418,25 @@ export default function AdminCatalog() {
       return;
     }
 
+    const url = newSerialUrl.trim();
+    if (url && !/^https?:\/\//i.test(url)) {
+      toast.error("URL must start with http:// or https://");
+      return;
+    }
+
     const serial: SerialNumber = {
       id: crypto.randomUUID(),
+      displayId: generateDisplayId(selectedProduct.serialNumbers || []),
       serial: newSerial.trim(),
+      url: url || undefined,
       isUsed: false,
     };
 
     const updatedSerials = [...(selectedProduct.serialNumbers || []), serial];
-    
+
     try {
       await catalogAPI.update(selectedProduct.id, { serialNumbers: updatedSerials });
-      
+
       setProducts(prev => prev.map(p => {
         if (p.id === selectedProduct.id) {
           return {
@@ -425,6 +449,7 @@ export default function AdminCatalog() {
 
       setSelectedProduct(prev => prev ? { ...prev, serialNumbers: updatedSerials } : null);
       setNewSerial("");
+      setNewSerialUrl("");
       toast.success("Serial number added");
     } catch (error) {
       console.error("Error adding serial number:", error);
@@ -468,14 +493,15 @@ export default function AdminCatalog() {
           
           const rows = results.data as string[][];
           const newSerials: SerialNumber[] = [];
-          
+
           for (const row of rows) {
             // Join columns if multiple exist
             const serialContent = row.filter(cell => cell && typeof cell === 'string' && cell.trim()).join(", ").trim();
-           
+
             if (serialContent) {
               newSerials.push({
                 id: crypto.randomUUID(),
+                displayId: generateDisplayId([...(selectedProduct.serialNumbers || []), ...newSerials]),
                 serial: serialContent,
                 isUsed: false,
               });
@@ -586,6 +612,40 @@ export default function AdminCatalog() {
       console.error("Error deleting all serial numbers:", error);
       const errorMsg = error instanceof Error ? error.message : String(error);
       toast.error(`Failed to delete serial numbers: ${errorMsg}`);
+    }
+  };
+
+  const startEditSerialUrl = (serial: SerialNumber) => {
+    setEditingSerialId(serial.id);
+    setEditingSerialUrl(serial.url || "");
+  };
+
+  const saveSerialUrl = async (productId: string, serialId: string) => {
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
+
+    const url = editingSerialUrl.trim();
+    if (url && !/^https?:\/\//i.test(url)) {
+      toast.error("URL must start with http:// or https://");
+      return;
+    }
+
+    const updatedSerials = (product.serialNumbers || []).map(s =>
+      s.id === serialId ? { ...s, url: url || undefined } : s
+    );
+
+    try {
+      await catalogAPI.update(productId, { serialNumbers: updatedSerials });
+      setProducts(prev => prev.map(p => p.id === productId ? { ...p, serialNumbers: updatedSerials } : p));
+      if (selectedProduct?.id === productId) {
+        setSelectedProduct(prev => prev ? { ...prev, serialNumbers: updatedSerials } : null);
+      }
+      setEditingSerialId(null);
+      setEditingSerialUrl("");
+      toast.success("Link updated");
+    } catch (error) {
+      console.error("Error updating serial URL:", error);
+      toast.error("Failed to update link");
     }
   };
 
@@ -938,17 +998,24 @@ export default function AdminCatalog() {
           <div className="space-y-4">
             {/* Add Serial Form */}
             <div className="space-y-3">
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-2">
                 <Input
-                  placeholder="Enter serial number"
+                  placeholder="Enter serial number / log"
                   value={newSerial}
                   onChange={(e) => setNewSerial(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && addSerialNumber()}
                   className="font-mono"
                 />
-                <Button onClick={addSerialNumber} className="bg-[#1565C0] hover:bg-[#0d4f9f]">
+                <Input
+                  placeholder="Check URL / link (optional)"
+                  value={newSerialUrl}
+                  onChange={(e) => setNewSerialUrl(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addSerialNumber()}
+                  className="font-mono"
+                />
+                <Button onClick={addSerialNumber} className="bg-[#1565C0] hover:bg-[#0d4f9f] w-full sm:w-auto self-start">
                   <Plus className="h-4 w-4 mr-2" />
-                  Add
+                  Add Account
                 </Button>
               </div>
 
@@ -1017,6 +1084,45 @@ export default function AdminCatalog() {
                   >
                     <div className="flex-1 min-w-0">
                       <p className="font-mono font-semibold text-sm break-all whitespace-pre-wrap leading-relaxed">{serial.serial}</p>
+                      {serial.displayId && (
+                        <p className="text-xs text-[#1565C0] dark:text-[#4d9cff] mt-0.5">Account #{serial.displayId}</p>
+                      )}
+                      {editingSerialId === serial.id ? (
+                        <div className="flex items-center gap-2 mt-1">
+                          <Input
+                            value={editingSerialUrl}
+                            onChange={(e) => setEditingSerialUrl(e.target.value)}
+                            placeholder="https://..."
+                            className="h-7 text-xs font-mono"
+                          />
+                          <Button
+                            size="sm"
+                            onClick={() => selectedProduct && saveSerialUrl(selectedProduct.id, serial.id)}
+                            className="h-7 px-2 text-xs bg-green-600 hover:bg-green-700"
+                          >
+                            Save
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => { setEditingSerialId(null); setEditingSerialUrl(""); }}
+                            className="h-7 px-2 text-xs"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      ) : (
+                        serial.url && (
+                          <a
+                            href={serial.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-green-600 dark:text-green-400 hover:underline break-all inline-block mt-0.5"
+                          >
+                            {serial.url}
+                          </a>
+                        )
+                      )}
                       {serial.isUsed && serial.usedBy && (
                         <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
                           Used by: {serial.usedBy} {serial.usedAt && `on ${new Date(serial.usedAt).toLocaleDateString()}`}
@@ -1029,6 +1135,15 @@ export default function AdminCatalog() {
                       ) : (
                         <Badge className="bg-[#1565C0]">Available</Badge>
                       )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => startEditSerialUrl(serial)}
+                        className="text-[#1565C0] hover:text-[#0d4f9f]"
+                        title="Edit link"
+                      >
+                        <Link2 className="h-4 w-4" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"

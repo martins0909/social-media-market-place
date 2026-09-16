@@ -67,7 +67,18 @@ const Auth = () => {
       })();
       navigate("/shop");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Invalid credentials");
+      let message = err instanceof Error ? err.message : "";
+      try {
+        const parsed = JSON.parse(message);
+        if (parsed?.error) message = parsed.error;
+      } catch {
+        // message wasn't JSON
+      }
+      if (message.toLowerCase().includes("invalid credentials") || message.toLowerCase().includes("invalid email") || message.toLowerCase().includes("invalid password")) {
+        toast.error("Invalid username or password");
+      } else {
+        toast.error(message || "Invalid username or password");
+      }
     } finally {
       clearTimeout(wakingTimer);
       setShowWakingMessage(false);

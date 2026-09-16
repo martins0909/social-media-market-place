@@ -34,7 +34,9 @@ export async function warmBackend(timeoutMs = 6000): Promise<void> {
 
 interface SerialNumber {
   id: string;
+  displayId?: string;
   serial: string;
+  url?: string;
   isUsed: boolean;
   usedBy?: string;
   usedAt?: string; // Changed from Date to string to match component
@@ -173,6 +175,7 @@ export const purchaseHistoryAPI = {
     userId: string;
     productId: string;
     quantity: number;
+    serialIds?: string[];
   }): Promise<{ success: boolean; newBalance: number; purchase: PurchaseHistory; assignedSerials: string[]; updatedProduct?: { id: string; availableStock: number } } > {
     return apiFetch('/api/purchase/complete', {
       method: 'POST',
