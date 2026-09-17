@@ -1,5 +1,5 @@
 import * as React from "react";
-import { ThemeProvider as NextThemesProvider } from "next-themes";
+import { ThemeProvider as NextThemesProvider, useTheme } from "next-themes";
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   return (
@@ -8,3 +8,5 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     </NextThemesProvider>
   );
 }
+
+export { useTheme };

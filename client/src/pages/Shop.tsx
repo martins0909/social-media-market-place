@@ -8,13 +8,13 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { apiFetch, catalogAPI, purchaseHistoryAPI, catalogCategoriesAPI, warmBackend } from "@/lib/api";
-import { Banknote, ChevronDown, History, Copy, Home, Menu, LogIn, FileText, Headphones, MessageCircle, Wallet, Eye, EyeOff, CreditCard, Zap, List, Check, User, Bell, ArrowRightLeft, Send, Briefcase, MoreHorizontal, LogOut } from "lucide-react";
+import { Banknote, ChevronDown, History, Copy, Home, Menu, LogIn, FileText, Headphones, MessageCircle, Wallet, Eye, EyeOff, CreditCard, Zap, List, Check, User, Bell, ArrowRightLeft, Send, MoreHorizontal, LogOut, Plus, BadgeCheck, X, ShoppingCart, Minus, LayoutGrid, Moon, Sun, HelpCircle } from "lucide-react";
 import bannerImg from "@/assets/ban.jpg";
 import bannerLog1 from "@/assets/bannerlog1.jpg";
 import bannerLog2 from "@/assets/bannerlog2.jpg";
 import bannerLog3 from "@/assets/bannerlogo3.png";
 import { Carousel, CarouselContent, CarouselItem, type CarouselApi } from "@/components/ui/carousel";
-import { Plus, LogOut, BadgeCheck, X, ShoppingCart, Minus, Send } from "lucide-react";
+import { useTheme } from "@/components/theme-provider";
 import logo from "@/assets/pics (2).png";
 // Removed demo product assets; shop now shows only database products
 
@@ -61,6 +61,7 @@ const PREFETCH_TTL_MS = 5 * 60 * 1000;
 
 const Shop = () => {
   const navigate = useNavigate();
+  const { theme, setTheme } = useTheme();
   const isFirstMount = useRef(true);
   const [user, setUser] = useState<User | null>(null);
   const [addFundsAmount, setAddFundsAmount] = useState("");
@@ -135,6 +136,9 @@ const Shop = () => {
   const [selectedAccountIds, setSelectedAccountIds] = useState<Record<string, string[]>>({});
   const [showManualFundsDialog, setShowManualFundsDialog] = useState(false);
   const [showPaymentMethodDialog, setShowPaymentMethodDialog] = useState(false);
+  const [showAddMoneyDialog, setShowAddMoneyDialog] = useState(false);
+  const [showConvertDialog, setShowConvertDialog] = useState(false);
+  const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
   const [showQuickPayDetailsDialog, setShowQuickPayDetailsDialog] = useState(false);
   const [quickPayDetails, setQuickPayDetails] = useState<{
     accountName?: string;
@@ -537,6 +541,33 @@ const Shop = () => {
        return;
      }
      setShowPaymentMethodDialog(true);
+  };
+
+  const openAddMoneyDialog = () => {
+    setAddFundsAmount("");
+    setShowAddMoneyDialog(true);
+  };
+
+  const proceedToPaymentMethod = () => {
+    const amount = parseFloat(addFundsAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast.error("Please enter a valid amount");
+      return;
+    }
+    setShowAddMoneyDialog(false);
+    setShowPaymentMethodDialog(true);
+  };
+
+  const EXCHANGE_RATE = 1500;
+  const openConvertDialog = () => setShowConvertDialog(true);
+
+  const scrollToProducts = () => {
+    const element = document.getElementById("mobile-products-section");
+    if (element) {
+      const offset = 120;
+      const elementPosition = element.getBoundingClientRect().top + window.pageYOffset;
+      window.scrollTo({ top: elementPosition - offset, behavior: "smooth" });
+    }
   };
 
   const getNamePartsFromUser = (name?: string) => {
@@ -1158,11 +1189,23 @@ const Shop = () => {
               ₦{Math.max(0, user.balance || 0).toFixed(0)}
             </button>
             <button 
+              onClick={() => setShowNotificationsDrawer(true)}
               className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors relative"
               aria-label="Notifications"
             >
               <Bell className="h-5 w-5 text-gray-700 dark:text-gray-200" />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
+            </button>
+            <button 
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
+              aria-label="Toggle theme"
+            >
+              {theme === "dark" ? (
+                <Sun className="h-5 w-5 text-amber-400" />
+              ) : (
+                <Moon className="h-5 w-5 text-gray-700" />
+              )}
             </button>
             <button 
               onClick={() => setShowMenuDrawer(true)}
@@ -1412,7 +1455,7 @@ const Shop = () => {
               {/* Quick Actions */}
               <div className="mt-4 grid grid-cols-4 gap-3">
                 <button
-                  onClick={handleAddFunds}
+                  onClick={openAddMoneyDialog}
                   className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-purple-50 dark:bg-purple-950/30 hover:bg-purple-100 dark:hover:bg-purple-950/50 transition-colors"
                 >
                   <div className="w-12 h-12 rounded-full bg-[#7c3aed] flex items-center justify-center text-white shadow-lg">
@@ -1423,7 +1466,7 @@ const Shop = () => {
                 </button>
 
                 <button
-                  onClick={() => toast.info("Coming soon")}
+                  onClick={openConvertDialog}
                   className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors"
                 >
                   <div className="w-12 h-12 rounded-full bg-teal-500 flex items-center justify-center text-white shadow-lg">
@@ -1434,7 +1477,7 @@ const Shop = () => {
                 </button>
 
                 <button
-                  onClick={() => scrollToCategory("All")}
+                  onClick={scrollToProducts}
                   className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors"
                 >
                   <div className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center text-white shadow-lg">
@@ -1508,7 +1551,7 @@ const Shop = () => {
               </CardContent>
             </Card>
             {/* Products and Buy Dialog */}
-            <div className="grid lg:grid-cols-1 gap-8">
+            <div id="mobile-products-section" className="grid lg:grid-cols-1 gap-8 scroll-mt-32">
               {/* Products Grid */}
               <div className="lg:col-span-1">
 
@@ -1654,21 +1697,18 @@ const Shop = () => {
         </div>
       </div>
     </div>
-      {/* Floating Telegram Support (bottom-right) */}
-      <div className="fixed bottom-8 right-6 z-50">
+      {/* Floating Customer Help (mobile only, above bottom nav) */}
+      <div className="md:hidden fixed bottom-24 right-5 z-40">
         <a
           href="https://t.me/+0v09JFhl1sZjYTlk"
           target="_blank"
           rel="noopener noreferrer"
           className="flex flex-col items-center gap-1 group"
-          aria-label="Contact us on Telegram"
+          aria-label="Customer help"
         >
-          <div className="flex items-center justify-center w-14 h-14 bg-[#1565C0] hover:bg-[#1565C0] text-white rounded-full shadow-2xl group-hover:scale-110 transition-all duration-300">
-            <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
-            </svg>
+          <div className="flex items-center justify-center w-12 h-12 bg-[#7c3aed] hover:bg-[#6d28d9] text-white rounded-full shadow-lg shadow-purple-500/30 group-hover:scale-110 transition-all duration-300">
+            <HelpCircle className="h-6 w-6" />
           </div>
-          <span className="text-xs font-medium text-gray-700 bg-white/80 backdrop-blur px-2 py-1 rounded-full shadow">online agent</span>
         </a>
       </div>
       </div>
@@ -2466,6 +2506,169 @@ const Shop = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Add Money Dialog */}
+      <Dialog open={showAddMoneyDialog} onOpenChange={setShowAddMoneyDialog}>
+        <DialogContent className="sm:max-w-md w-[90%] rounded-2xl p-0 overflow-hidden">
+          <div className="bg-gradient-to-br from-[#7c3aed] to-[#4c1d95] p-5 text-white">
+            <DialogHeader className="pb-0">
+              <DialogTitle className="text-xl font-bold text-white flex items-center gap-2">
+                <Wallet className="h-5 w-5" />
+                Add Money
+              </DialogTitle>
+              <DialogDescription className="text-white/70">
+                Enter amount to fund your wallet
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <div className="p-5 space-y-5">
+            <div>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5 block">Amount (₦)</label>
+              <div className="relative">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold">₦</span>
+                <Input
+                  type="number"
+                  placeholder="0.00"
+                  value={addFundsAmount}
+                  onChange={(e) => setAddFundsAmount(e.target.value)}
+                  min="100"
+                  step="100"
+                  className="pl-8 h-14 text-xl font-bold border-2 border-gray-200 dark:border-gray-700 focus:border-[#7c3aed] rounded-xl"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Quick select</p>
+              <div className="grid grid-cols-3 gap-2">
+                {[1000, 5000, 10000, 20000, 50000, 100000].map((amount) => (
+                  <button
+                    key={amount}
+                    onClick={() => setAddFundsAmount(amount.toString())}
+                    className="py-2.5 px-3 rounded-xl border border-purple-100 dark:border-purple-800/50 bg-purple-50/50 dark:bg-purple-950/20 text-sm font-semibold text-[#7c3aed] dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-950/40 transition-colors"
+                  >
+                    ₦{amount.toLocaleString()}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <Button
+              onClick={proceedToPaymentMethod}
+              className="w-full h-12 bg-[#7c3aed] hover:bg-[#6d28d9] text-white font-bold rounded-xl"
+            >
+              Select Payment Method
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Convert Currency Dialog */}
+      <Dialog open={showConvertDialog} onOpenChange={setShowConvertDialog}>
+        <DialogContent className="sm:max-w-md w-[90%] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+              <ArrowRightLeft className="h-5 w-5 text-teal-500" />
+              Convert Currency
+            </DialogTitle>
+            <DialogDescription>
+              See your Naira balance in USD equivalent
+            </DialogDescription>
+          </DialogHeader>
+          <div className="p-2 space-y-4">
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-500 text-white">
+              <p className="text-sm text-white/80 mb-1">Your balance</p>
+              <p className="text-3xl font-black">₦{Math.max(0, user?.balance || 0).toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+            </div>
+            <div className="flex items-center justify-center">
+              <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+                <ArrowRightLeft className="h-5 w-5 text-gray-500" />
+              </div>
+            </div>
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-500 text-white">
+              <p className="text-sm text-white/80 mb-1">USD equivalent</p>
+              <p className="text-3xl font-black">${(Math.max(0, user?.balance || 0) / EXCHANGE_RATE).toFixed(2)}</p>
+              <p className="text-xs text-white/70 mt-1">Rate: ₦{EXCHANGE_RATE} = $1</p>
+            </div>
+            <Button onClick={() => setShowConvertDialog(false)} className="w-full h-11 rounded-xl bg-[#7c3aed] hover:bg-[#6d28d9] text-white font-bold">
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Notifications Drawer */}
+      {showNotificationsDrawer && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 md:hidden"
+            onClick={() => setShowNotificationsDrawer(false)}
+          />
+          <div className={`fixed top-0 right-0 h-[100dvh] w-80 max-w-[85vw] bg-white dark:bg-black shadow-2xl z-50 md:hidden transform transition-transform duration-300 ease-in-out flex flex-col ${
+            showNotificationsDrawer ? 'translate-x-0' : 'translate-x-full'
+          }`}>
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
+                <Bell className="h-5 w-5 text-[#7c3aed]" />
+                Notifications
+              </h2>
+              <button
+                onClick={() => setShowNotificationsDrawer(false)}
+                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-[#18181b] transition-colors"
+                aria-label="Close notifications"
+              >
+                <X className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto py-4 px-4 space-y-3">
+              {/* Platform update notification */}
+              <div className="p-3 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-800/50">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full bg-[#7c3aed] flex items-center justify-center flex-shrink-0">
+                    <MessageCircle className="h-5 w-5 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">New Telegram Channel</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Our previous channel was banned. Join the new channel for updates.</p>
+                    <button
+                      onClick={() => window.open("https://t.me/+0v09JFhl1sZjYTlk", "_blank")}
+                      className="text-xs font-semibold text-[#7c3aed] mt-1 hover:underline"
+                    >
+                      Join now
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recent purchases */}
+              {purchaseHistory.slice(0, 5).map((item) => (
+                <div key={item.id + item.purchaseDate} className="p-3 rounded-xl bg-gray-50 dark:bg-[#09090b] border border-gray-100 dark:border-gray-800">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">Purchase completed</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">You bought {item.name} x{item.quantity}</p>
+                  <p className="text-xs text-[#7c3aed] font-medium mt-1">-{item.price * item.quantity}</p>
+                </div>
+              ))}
+
+              {/* Recent deposits */}
+              {depositHistory.filter(d => d.status === 'success' || d.status === 'completed').slice(0, 3).map((d, i) => (
+                <div key={d._id || i} className="p-3 rounded-xl bg-green-50 dark:bg-green-950/20 border border-green-100 dark:border-green-900/50">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">Wallet funded</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{d.method?.toUpperCase()} deposit successful</p>
+                  <p className="text-xs text-green-600 dark:text-green-400 font-medium mt-1">+₦{d.amount?.toFixed(2)}</p>
+                </div>
+              ))}
+
+              {purchaseHistory.length === 0 && depositHistory.length === 0 && (
+                <div className="text-center py-8">
+                  <Bell className="h-12 w-12 mx-auto text-gray-300 dark:text-gray-700 mb-3" />
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No recent notifications</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Payment Method Selection Dialog */}
       <Dialog open={showPaymentMethodDialog} onOpenChange={setShowPaymentMethodDialog}>
         <DialogContent className="sm:max-w-md w-[90%] rounded-xl">
@@ -2551,18 +2754,18 @@ const Shop = () => {
           </button>
 
           <button
-            onClick={() => setShowBalanceModal(true)}
+            onClick={scrollToProducts}
             className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-purple-50 dark:hover:bg-purple-950/30 transition-all duration-300 group min-w-0 flex-1"
-            aria-label="Working profile"
+            aria-label="Shop"
           >
-            <Briefcase className="h-5 w-5 text-gray-500 dark:text-gray-400 group-hover:text-[#7c3aed] dark:group-hover:text-purple-400 transition-colors" />
-            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400 group-hover:text-[#7c3aed] dark:group-hover:text-purple-400 transition-colors">working profile</span>
+            <LayoutGrid className="h-5 w-5 text-gray-500 dark:text-gray-400 group-hover:text-[#7c3aed] dark:group-hover:text-purple-400 transition-colors" />
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400 group-hover:text-[#7c3aed] dark:group-hover:text-purple-400 transition-colors">Shop</span>
           </button>
 
           {/* Center Add Money Button */}
           <div className="flex flex-col items-center -mt-6 min-w-0 flex-1">
             <button
-              onClick={handleAddFunds}
+              onClick={openAddMoneyDialog}
               className="flex flex-col items-center justify-center w-14 h-14 rounded-full bg-[#7c3aed] hover:bg-[#6d28d9] text-white shadow-lg shadow-purple-500/30 transition-all duration-300 hover:scale-105"
               aria-label="Add money"
             >
