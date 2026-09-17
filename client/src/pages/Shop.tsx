@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { apiFetch, catalogAPI, purchaseHistoryAPI, catalogCategoriesAPI, warmBackend } from "@/lib/api";
-import { Banknote, ChevronDown, History, Copy, Home, Menu, LogIn, FileText, Headphones, MessageCircle, Wallet, Eye, EyeOff, CreditCard, Zap, List, Check } from "lucide-react";
+import { Banknote, ChevronDown, History, Copy, Home, Menu, LogIn, FileText, Headphones, MessageCircle, Wallet, Eye, EyeOff, CreditCard, Zap, List, Check, User, Bell, ArrowRightLeft, Send, Briefcase, MoreHorizontal, LogOut } from "lucide-react";
 import bannerImg from "@/assets/ban.jpg";
 import bannerLog1 from "@/assets/bannerlog1.jpg";
 import bannerLog2 from "@/assets/bannerlog2.jpg";
@@ -912,7 +912,7 @@ const Shop = () => {
       <>
         <Card
           key={product.id}
-          className="bg-white dark:bg-black shadow-lg border border-gray-100 dark:border-gray-800 mx-2 md:mx-0 rounded-2xl overflow-hidden animate-in fade-in slide-in-from-bottom group"
+          className="bg-gradient-to-br from-purple-50 via-white to-blue-50 dark:from-purple-950/40 dark:via-gray-900 dark:to-blue-950/40 shadow-lg border border-purple-100/60 dark:border-purple-800/30 mx-2 md:mx-0 rounded-2xl overflow-hidden animate-in fade-in slide-in-from-bottom group"
           style={{ animationDelay: `${index * 50}ms` }}
         >
           <CardContent className="p-0">
@@ -1035,7 +1035,7 @@ const Shop = () => {
 
         {/* Bulk Purchase Section (mobile only, shown below product card) */}
         {accountsExpanded && (
-          <div className="md:hidden mx-2 mt-3 mb-6 bg-white dark:bg-black rounded-2xl border border-gray-100 dark:border-gray-800 p-4 shadow-md animate-in fade-in slide-in-from-top duration-200">
+          <div className="md:hidden mx-2 mt-3 mb-6 bg-gradient-to-br from-purple-50 via-white to-blue-50 dark:from-purple-950/40 dark:via-gray-900 dark:to-blue-950/40 rounded-2xl border border-purple-100/60 dark:border-purple-800/30 p-4 shadow-md animate-in fade-in slide-in-from-top duration-200">
             <h4 className="text-lg font-bold text-gray-900 dark:text-white">Bulk Purchase</h4>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
               Select accounts and buy multiple at once
@@ -1118,22 +1118,62 @@ const Shop = () => {
       <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-gradient-to-br from-[#4d9cff]/20 to-[#4d9cff]/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
       <div className="absolute top-1/2 right-1/4 w-[400px] h-[400px] bg-gradient-to-br from-[#4d9cff]/15 to-[#4d9cff]/15 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '0.5s' }}></div> */}
       
-      <Navbar 
-        isShopPage 
-        cartItemCount={purchaseHistory.length} 
-        onCartClick={() => setShowPurchaseHistory(true)}
-        onMenuClick={() => setShowCategoryDrawer(true)}
-        onGeneralMenuClick={() => setShowMenuDrawer(true)}
-        shopCategories={categories}
-        onShopCategorySelect={(category) => {
-          setActiveCategory(category);
-          scrollToCategory(category);
-        }}
-        onShopBalanceClick={() => setShowBalanceModal(true)}
-        onShopPurchaseHistoryClick={() => setShowPurchaseHistory(true)}
-        onShopDepositHistoryClick={() => setShowDepositHistory(true)}
-        onShopSignOutClick={handleSignOut}
-      />
+      {/* Desktop Navbar - hidden on mobile */}
+      <div className="hidden md:block">
+        <Navbar 
+          isShopPage 
+          cartItemCount={purchaseHistory.length} 
+          onCartClick={() => setShowPurchaseHistory(true)}
+          onMenuClick={() => setShowCategoryDrawer(true)}
+          onGeneralMenuClick={() => setShowMenuDrawer(true)}
+          shopCategories={categories}
+          onShopCategorySelect={(category) => {
+            setActiveCategory(category);
+            scrollToCategory(category);
+          }}
+          onShopBalanceClick={() => setShowBalanceModal(true)}
+          onShopPurchaseHistoryClick={() => setShowPurchaseHistory(true)}
+          onShopDepositHistoryClick={() => setShowDepositHistory(true)}
+          onShopSignOutClick={handleSignOut}
+        />
+      </div>
+
+      {/* Mobile Header */}
+      <div className="md:hidden sticky top-0 z-50 bg-gray-50/95 dark:bg-black/95 backdrop-blur-md px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+        <div className="flex items-center justify-between gap-2">
+          <button 
+            onClick={() => setShowCategoryDrawer(true)} 
+            className="p-2 -ml-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
+            aria-label="Open categories"
+          >
+            <Menu className="h-6 w-6 text-gray-700 dark:text-gray-200" />
+          </button>
+          <img src={logo} alt="Social Media Marketplace" className="h-8 w-auto max-w-[140px] object-contain" />
+          <div className="flex items-center gap-1">
+            <button 
+              onClick={() => setShowBalanceModal(true)}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs font-bold"
+            >
+              <Wallet className="h-3.5 w-3.5" />
+              ₦{Math.max(0, user.balance || 0).toFixed(0)}
+            </button>
+            <button 
+              className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors relative"
+              aria-label="Notifications"
+            >
+              <Bell className="h-5 w-5 text-gray-700 dark:text-gray-200" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
+            </button>
+            <button 
+              onClick={() => setShowMenuDrawer(true)}
+              className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
+              aria-label="Open menu"
+            >
+              <User className="h-5 w-5 text-gray-700 dark:text-gray-200" />
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Notification Modal */}
       <Dialog open={showNotificationModal} onOpenChange={setShowNotificationModal}>
@@ -1299,36 +1339,13 @@ const Shop = () => {
         </DialogContent>
       </Dialog>
 
-      <div className="pt-20 md:pt-24 relative">
-        {/* Banner Section with Welcome Badge - Full Width */}
-        <div className="relative mb-6 animate-in fade-in slide-in-from-top duration-500">
-          {/* <a 
-            href="https://chat.whatsapp.com/HCE6nkuaxXm4j2ugwW5exb" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="hidden md:block relative overflow-hidden rounded-2xl shadow-xl border-2 border-white/60 dark:border-gray-800 hover:border-[#4d9cff] transition-colors mx-auto w-3/4 md:w-full"
-          >
-            <img
-              src={bannerImg}
-              alt="Premium products banner"
-              className="w-full h-7 md:h-44 object-cover select-none"
-              draggable={false}
-            />
-            <div className="absolute inset-0 bg-gradient-to-r from-[#0B0F14]/20 via-[#0B0F14]/20 to-[#0B0F14]/20 mix-blend-multiply"></div>
-          </a> */}
-          
-          {/* Title moved below banner */}
+      <div className="pt-4 md:pt-24 relative">
+        {/* Desktop Banner Section */}
+        <div className="relative mb-6 animate-in fade-in slide-in-from-top duration-500 hidden md:block">
           <h1 className="mt-2 md:mt-6 text-center text-3xl md:text-5xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-[#1565C0] to-[#0d4f9f] dark:from-[#4d9cff] dark:to-[#1565C0] tracking-tight">
-            <span className="hidden md:inline">Shop Correct LOGs</span>
+            Shop Correct LOGs
           </h1>
 
-          <div className="mx-auto mb-3 block max-w-[calc(100%-2rem)] overflow-hidden rounded-full border border-[#1565C0]/20 bg-[#0B0F14] px-3 py-2 text-center shadow-[0_0_24px_rgba(21,101,192,0.2)] md:hidden">
-            <div className="marquee-track inline-flex whitespace-nowrap text-[10px] font-bold tracking-wide text-[#FFC107]">
-              we have sold 1.8 million accounts and still counting, join us today · our services are quick, reliable and affordable ·&nbsp;
-            </div>
-          </div>
-
-          {/* Welcome badge positioned below the announcement */}
           <div className="flex justify-center mt-2 md:mt-4">
             <div className="flex items-center gap-1 md:gap-2 bg-white/90 dark:bg-black/90 backdrop-blur-xl px-3 py-1.5 md:px-4 md:py-2 rounded-full shadow-sm border border-gray-200 dark:border-gray-700">
               <span className="text-[10px] md:text-sm text-gray-600 dark:text-gray-400 font-semibold">Welcome</span>
@@ -1338,84 +1355,107 @@ const Shop = () => {
               <BadgeCheck className="h-3 w-3 md:h-5 md:w-5 text-[#1565C0]" />
             </div>
           </div>
-
         </div>
 
         <div className="px-0 md:px-6">
           <div className="container mx-auto px-0 md:px-8">
             <div className="flex flex-col md:flex-row gap-6 items-start">
               <main className="flex-1 min-w-0 w-full">
-            
-            {/* Header Section (subtitle only now, main title moved into banner) */}
-            {/* <div className="text-center mb-8 md:mb-12 animate-in fade-in slide-in-from-top duration-700 px-6 md:px-0">
-              <div className="max-w-3xl mx-auto flex justify-center">
-                <Carousel setApi={setApi} opts={{ loop: true }} className="w-full">
-                  <CarouselContent>
-                    {[bannerLog1, bannerLog2, bannerLog3].map((img, index) => (
-                      <CarouselItem key={index} className="w-full">
-                        <img 
-                          src={img} 
-                          alt={`Banner ${index + 1}`} 
-                          className="w-full h-[20vh] object-cover rounded-xl shadow-sm"
-                        />
-                      </CarouselItem>
-                    ))}
-                  </CarouselContent>
-                </Carousel>
-              </div>
-            </div> */}
 
-            {/* Mobile wallet card */}
-            <Card className="block md:hidden mb-6 overflow-hidden rounded-2xl border border-[#1565C0]/30 bg-white shadow-[0_10px_40px_rgba(21,101,192,0.18),0_0_18px_rgba(255,193,7,0.1)] dark:border-white/10 dark:bg-[#101820] animate-in fade-in duration-700">
-              <CardHeader className="p-4 pb-3">
-                <div className="rounded-xl bg-[#0B0F14] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
-                  <div className="flex items-center justify-between gap-3">
-                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-white/30 bg-white/10 backdrop-blur-sm">
-                    <Wallet className="h-5 w-5 text-white" />
+            {/* Mobile Greeting + Wallet + Quick Actions */}
+            <div className="md:hidden px-4 mb-6 animate-in fade-in slide-in-from-top duration-500">
+              <div className="mb-4">
+                <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white flex items-center gap-2">
+                  Hello {user.name || user.email.split('@')[0]} <span className="text-2xl">👋</span>
+                </h1>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                  Here's an overview of your account's recent activity.
+                </p>
+              </div>
+
+              {/* Purple Wallet Card */}
+              <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#7c3aed] via-[#6d28d9] to-[#4c1d95] p-5 text-white shadow-xl">
+                <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full -mr-10 -mt-10 blur-2xl"></div>
+                <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/10 rounded-full -ml-10 -mb-10 blur-2xl"></div>
+
+                <div className="relative flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2 text-white/80 text-xs font-bold uppercase tracking-wider">
+                    <Wallet className="h-4 w-4" />
+                    Wallet Balance
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2"><img src={logo} alt="Social Media Marketplace" className="h-5 w-auto max-w-[145px] object-contain" /><span className="text-[9px] font-bold uppercase tracking-wider text-[#FFC107]">social media market place</span></div>
-                  </div>
-                  </div>
-                  <div className="mt-4 border-t border-white/10 pt-3">
-                    <CardTitle className="mb-1 text-xs font-bold uppercase tracking-[0.18em] text-[#d5e5ff]">Available Balance</CardTitle>
-                    <CardDescription className="flex items-center text-sm font-medium text-[#d5e5ff]">
-                      <span className="ml-0 text-3xl font-black tracking-tight text-white">
-                        {showBalance ? `₦${Math.max(0, user.balance || 0).toFixed(2)}` : '••••••'}
-                      </span>
-                      <button 
-                        onClick={() => setShowBalance(!showBalance)} 
-                        className="ml-2 p-1 hover:bg-white/10 rounded-full transition-colors"
-                        aria-label={showBalance ? "Hide balance" : "Show balance"}
-                      >
-                        {showBalance ? <EyeOff className="h-4 w-4 text-[#d5e5ff]" /> : <Eye className="h-4 w-4 text-[#d5e5ff]" />}
-                      </button>
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="px-4 pb-4 pt-0">
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <Input
-                    type="number"
-                    placeholder="Enter amount"
-                    value={addFundsAmount}
-                    onChange={(e) => setAddFundsAmount(e.target.value)}
-                    min="0"
-                    step="0.01"
-                    className="h-10 border-2 border-gray-200 dark:border-gray-700 focus:border-[#1565C0] transition-all duration-300 rounded-xl bg-white dark:bg-[#09090b] text-gray-900 dark:text-gray-100 text-sm"
-                  />
-                  <Button 
-                    onClick={handleAddFunds}
-                    className="h-10 px-4 bg-[#1565C0] hover:bg-[#0d4f9f] text-white font-semibold shadow-lg hover:shadow-xl transition-all duration-300 rounded-xl text-sm w-full"
+                  <button
+                    onClick={() => setShowBalance(!showBalance)}
+                    className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+                    aria-label={showBalance ? "Hide balance" : "Show balance"}
                   >
-                    <Plus className="h-3 w-3 mr-2" />
-                    Add Funds
-                  </Button>
+                    {showBalance ? <EyeOff className="h-4 w-4 text-white/80" /> : <Eye className="h-4 w-4 text-white/80" />}
+                  </button>
                 </div>
-                <p className="mt-4 border-t border-gray-200 pt-3 text-xs font-semibold text-gray-500 dark:border-white/10 dark:text-white/60">{user.name || user.email.split("@")[0]}</p>
-              </CardContent>
-            </Card>
+
+                <div className="relative mb-3">
+                  <div className="text-4xl font-black tracking-tight">
+                    {showBalance ? `₦${Math.max(0, user.balance || 0).toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '••••••'}
+                  </div>
+                </div>
+
+                <div className="relative flex items-center justify-between">
+                  <div className="inline-flex items-center px-3 py-1 rounded-full bg-white/15 text-xs font-semibold">
+                    USD ${(Math.max(0, user.balance || 0) / 1500).toFixed(2)}
+                  </div>
+                  <div className="flex items-center gap-1 text-sm font-semibold text-white/90">
+                    <User className="h-4 w-4" />
+                    {(user.name || user.email.split('@')[0]).toUpperCase()}
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Actions */}
+              <div className="mt-4 grid grid-cols-4 gap-3">
+                <button
+                  onClick={handleAddFunds}
+                  className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-purple-50 dark:bg-purple-950/30 hover:bg-purple-100 dark:hover:bg-purple-950/50 transition-colors"
+                >
+                  <div className="w-12 h-12 rounded-full bg-[#7c3aed] flex items-center justify-center text-white shadow-lg">
+                    <Plus className="h-6 w-6" />
+                  </div>
+                  <span className="text-xs font-semibold text-gray-800 dark:text-gray-200">Add money</span>
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400 -mt-1">Fund wallet</span>
+                </button>
+
+                <button
+                  onClick={() => toast.info("Coming soon")}
+                  className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors"
+                >
+                  <div className="w-12 h-12 rounded-full bg-teal-500 flex items-center justify-center text-white shadow-lg">
+                    <ArrowRightLeft className="h-5 w-5" />
+                  </div>
+                  <span className="text-xs font-semibold text-gray-800 dark:text-gray-200">Convert</span>
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400 -mt-1">Exchange</span>
+                </button>
+
+                <button
+                  onClick={() => scrollToCategory("All")}
+                  className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors"
+                >
+                  <div className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center text-white shadow-lg">
+                    <ShoppingCart className="h-5 w-5" />
+                  </div>
+                  <span className="text-xs font-semibold text-gray-800 dark:text-gray-200">Buy accounts</span>
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400 -mt-1">Get started</span>
+                </button>
+
+                <button
+                  onClick={() => toast.info("Coming soon")}
+                  className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors"
+                >
+                  <div className="w-12 h-12 rounded-full bg-rose-500 flex items-center justify-center text-white shadow-lg">
+                    <Send className="h-5 w-5" />
+                  </div>
+                  <span className="text-xs font-semibold text-gray-800 dark:text-gray-200">Send</span>
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400 -mt-1">Transfer</span>
+                </button>
+              </div>
+            </div>
 
             {/* Desktop/tablet wallet card (hidden on small screens) */}
             <Card className="hidden md:block mb-6 overflow-hidden rounded-2xl border border-[#1565C0]/20 bg-white shadow-xl dark:border-white/10 dark:bg-[#101820] md:mb-8 animate-in fade-in slide-in-from-left duration-700">
@@ -2122,6 +2162,22 @@ const Shop = () => {
                   <div className="text-sm text-gray-500 dark:text-gray-400">Terms and conditions</div>
                 </div>
               </button>
+
+              <button
+                onClick={() => {
+                  setShowDepositHistory(true);
+                  setShowMenuDrawer(false);
+                }}
+                className="w-full flex items-center gap-3 px-4 py-4 hover:bg-[#e8f1ff] dark:hover:bg-[#0B0F14] transition-colors"
+              >
+                <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900 flex items-center justify-center">
+                  <Banknote className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div className="text-left">
+                  <div className="font-medium text-gray-800 dark:text-gray-200">Deposit History</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">View your fund additions</div>
+                </div>
+              </button>
               
               <button
                 onClick={() => {
@@ -2483,67 +2539,62 @@ const Shop = () => {
       </Dialog>
 
       {/* Mobile Bottom Navigation */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 dark:bg-black/95 backdrop-blur-xl border-t-2 border-white/60 dark:border-gray-800 shadow-2xl">
-        <div className="flex items-center justify-around py-2 px-4">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-black border-t border-gray-100 dark:border-gray-800 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] pb-safe">
+        <div className="flex items-end justify-around px-2 pt-2 pb-3">
           <button
             onClick={() => navigate("/")}
-            className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-[#e8f1ff] dark:hover:bg-[#0B0F14] transition-all duration-300 group min-w-0 flex-1"
+            className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-purple-50 dark:hover:bg-purple-950/30 transition-all duration-300 group min-w-0 flex-1"
             aria-label="Home"
           >
-            <Home className="h-5 w-5 text-gray-600 dark:text-gray-400 group-hover:text-[#1565C0] dark:group-hover:text-[#4d9cff] transition-colors" />
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 group-hover:text-[#1565C0] dark:group-hover:text-[#4d9cff] transition-colors">Home</span>
+            <Home className="h-5 w-5 text-[#7c3aed] dark:text-purple-400 transition-colors" />
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400 group-hover:text-[#7c3aed] dark:group-hover:text-purple-400 transition-colors">Home</span>
           </button>
-          
+
           <button
-            onClick={() => {
-              // Scroll to enter amount input
-              const enterAmountInput = document.querySelector('input[placeholder="Enter amount"]');
-              if (enterAmountInput) {
-                enterAmountInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }
-            }}
-            className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-[#e8f1ff] dark:hover:bg-[#0B0F14] transition-all duration-300 group min-w-0 flex-1"
-            aria-label="Add Funds"
+            onClick={() => setShowBalanceModal(true)}
+            className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-purple-50 dark:hover:bg-purple-950/30 transition-all duration-300 group min-w-0 flex-1"
+            aria-label="Working profile"
           >
-            <Wallet className="h-5 w-5 text-gray-600 dark:text-gray-400 group-hover:text-[#1565C0] dark:group-hover:text-[#4d9cff] transition-colors" />
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 group-hover:text-[#1565C0] dark:group-hover:text-[#4d9cff] transition-colors">Fund</span>
+            <Briefcase className="h-5 w-5 text-gray-500 dark:text-gray-400 group-hover:text-[#7c3aed] dark:group-hover:text-purple-400 transition-colors" />
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400 group-hover:text-[#7c3aed] dark:group-hover:text-purple-400 transition-colors">working profile</span>
           </button>
-          
-          <button
-            onClick={() => setShowCategoryDrawer(true)}
-            className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-[#e8f1ff] dark:hover:bg-[#0B0F14] transition-all duration-300 group min-w-0 flex-1"
-            aria-label="Categories"
-          >
-            <Menu className="h-5 w-5 text-gray-600 dark:text-gray-400 group-hover:text-[#1565C0] dark:group-hover:text-[#4d9cff] transition-colors" />
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 group-hover:text-[#1565C0] dark:group-hover:text-[#4d9cff] transition-colors">Category</span>
-          </button>
-          
+
+          {/* Center Add Money Button */}
+          <div className="flex flex-col items-center -mt-6 min-w-0 flex-1">
+            <button
+              onClick={handleAddFunds}
+              className="flex flex-col items-center justify-center w-14 h-14 rounded-full bg-[#7c3aed] hover:bg-[#6d28d9] text-white shadow-lg shadow-purple-500/30 transition-all duration-300 hover:scale-105"
+              aria-label="Add money"
+            >
+              <Plus className="h-7 w-7" />
+            </button>
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400 mt-1">Add money</span>
+          </div>
+
           <button
             onClick={() => setShowPurchaseHistory(true)}
-            className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-[#e8f1ff] dark:hover:bg-[#0B0F14] transition-all duration-300 group min-w-0 flex-1 relative"
-            aria-label="Purchase History"
+            className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-purple-50 dark:hover:bg-purple-950/30 transition-all duration-300 group min-w-0 flex-1 relative"
+            aria-label="Orders"
           >
             <div className="relative">
-              <ShoppingCart className="h-5 w-5 text-gray-600 dark:text-gray-400 group-hover:text-[#1565C0] dark:group-hover:text-[#4d9cff] transition-colors" />
+              <ShoppingCart className="h-5 w-5 text-gray-500 dark:text-gray-400 group-hover:text-[#7c3aed] dark:group-hover:text-purple-400 transition-colors" />
               {purchaseHistory.length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full h-4 w-4 flex items-center justify-center shadow-lg">
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full h-4 w-4 flex items-center justify-center shadow-lg">
                   {purchaseHistory.length}
                 </span>
               )}
             </div>
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 group-hover:text-[#1565C0] dark:group-hover:text-[#4d9cff] transition-colors">Order</span>
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400 group-hover:text-[#7c3aed] dark:group-hover:text-purple-400 transition-colors">Orders</span>
           </button>
-          
-          <button
-            onClick={() => setShowDepositHistory(true)}
-            className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-[#e8f1ff] dark:hover:bg-[#0B0F14] transition-all duration-300 group min-w-0 flex-1"
-            aria-label="Deposit History"
-          >
-            <History className="h-5 w-5 text-gray-600 dark:text-gray-400 group-hover:text-[#1565C0] dark:group-hover:text-[#4d9cff] transition-colors" />
-            <span className="text-xs font-medium text-gray-600 dark:text-gray-400 group-hover:text-[#1565C0] dark:group-hover:text-[#4d9cff] transition-colors">Deposit</span>
-          </button>
-          
 
+          <button
+            onClick={() => setShowMenuDrawer(true)}
+            className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-purple-50 dark:hover:bg-purple-950/30 transition-all duration-300 group min-w-0 flex-1"
+            aria-label="More"
+          >
+            <MoreHorizontal className="h-5 w-5 text-gray-500 dark:text-gray-400 group-hover:text-[#7c3aed] dark:group-hover:text-purple-400 transition-colors" />
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400 group-hover:text-[#7c3aed] dark:group-hover:text-purple-400 transition-colors">More</span>
+          </button>
         </div>
       </div>
     </div>
