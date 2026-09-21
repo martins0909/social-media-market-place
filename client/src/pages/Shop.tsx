@@ -2149,7 +2149,7 @@ const Shop = () => {
                   <span className="text-xs font-black uppercase tracking-wider text-[#1565C0]">Your referral link</span>
                   <span className="text-[10px] font-bold text-[#FFC107]">+₦100 each</span>
                 </div>
-                <p className="mb-2 text-[11px] leading-4 text-gray-500 dark:text-gray-400">Invite a new user and earn ₦100 when they sign up.</p>
+                <p className="mb-2 text-[11px] leading-4 text-gray-500 dark:text-gray-400">Invite a new user and earn ₦300 when they buy ₦3,000+ worth of products.</p>
                 <button onClick={copyReferralLink} disabled={!referralLink} className="flex w-full items-center gap-2 rounded-lg bg-[#0B0F14] px-3 py-2 text-left text-[10px] font-medium text-white disabled:opacity-50">
                   <span className="min-w-0 flex-1 truncate">{referralLink || "Sign in again to generate your link"}</span>
                   <Copy className="h-4 w-4 shrink-0 text-[#FFC107]" />
