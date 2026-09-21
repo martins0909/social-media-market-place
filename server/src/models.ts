@@ -36,6 +36,7 @@ export interface IUser extends Document {
   balance?: number;
   referralCode?: string;
   referredBy?: string;
+  referralPurchaseBonusReceived?: boolean;
   phoneNumber?: string;
   passwordResetTokenHash?: string;
   passwordResetExpiresAt?: Date;
@@ -167,6 +168,7 @@ const UserSchema = new Schema<IUser>({
   balance: { type: Number, default: 0 },
   referralCode: { type: String, unique: true, sparse: true, index: true },
   referredBy: { type: String },
+  referralPurchaseBonusReceived: { type: Boolean, default: false },
   phoneNumber: { type: String, trim: true },
   passwordResetTokenHash: { type: String },
   passwordResetExpiresAt: { type: Date },

@@ -337,7 +337,7 @@ const Index = () => {
       {/* Floating Social Support Icons */}
       {/* <div className="fixed bottom-8 left-6 z-50">
         <a
-          href="https://chat.whatsapp.com/HCE6nkuaxXm4j2ugwW5exb"
+          href="https://chat.whatsapp.com/G3mMW8GxSg15yNRzNQ3f84"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center justify-center w-14 h-14 bg-green-500 hover:bg-green-600 text-white rounded-full shadow-2xl hover:scale-110 transition-all duration-300"
@@ -351,7 +351,7 @@ const Index = () => {
 
       <div className="fixed bottom-8 right-6 z-50">
         <a
-          href="https://t.me/+0v09JFhl1sZjYTlk"
+          href="https://t.me/officialsocialmediamarketplace"
           target="_blank"
           rel="noopener noreferrer"
           className="flex flex-col items-center gap-1 group"

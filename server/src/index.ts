@@ -311,10 +311,6 @@ app.post("/api/auth/register", async (req: Request, res: Response) => {
     await ensureUserPhoneNumber(user);
     await ensureUserReferralCode(user);
 
-    if (referrer) {
-      await User.updateOne({ _id: referrer._id }, { $inc: { balance: 100 } }).exec();
-    }
-    
     res.json({ 
       ok: true, 
       user: { 
@@ -1148,9 +1144,23 @@ app.post("/api/purchase/complete", async (req: Request, res: Response) => {
         });
         await purchase.save({ session } as any);
 
+        // Referral purchase bonus: if user was referred and this is their
+        // first qualifying purchase (>= ₦3,000), reward referrer ₦300 and buyer ₦200.
+        let referralBuyerBonus = 0;
+        if (user.referredBy && totalPrice >= 3000 && !user.referralPurchaseBonusReceived) {
+          const referrer = await User.findOne({ referralCode: user.referredBy }).session(session).exec();
+          if (referrer) {
+            await User.updateOne({ _id: referrer._id }, { $inc: { balance: 300 } }).session(session).exec();
+            referralBuyerBonus = 200;
+          }
+        }
+
+        const userUpdate: any = { $inc: { balance: referralBuyerBonus - totalPrice } };
+        if (referralBuyerBonus > 0) userUpdate.referralPurchaseBonusReceived = true;
+
         const updatedUser = await User.findByIdAndUpdate(
           userId,
-          { $inc: { balance: -totalPrice } },
+          userUpdate,
           { new: true, session }
         ).exec();
 

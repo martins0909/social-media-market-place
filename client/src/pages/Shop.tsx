@@ -881,7 +881,7 @@ const Shop = () => {
   };
 
   const referralLink = user?.referralCode
-    ? `${window.location.origin}/auth?ref=${encodeURIComponent(user.referralCode)}`
+    ? `https://socialmediamarketplace.org/auth?ref=${encodeURIComponent(user.referralCode)}`
     : "";
 
   const copyReferralLink = async () => {
@@ -1234,7 +1234,7 @@ const Shop = () => {
             
             <div className="w-full flex justify-center py-2">
               <Button 
-                onClick={() => window.open("https://t.me/+0v09JFhl1sZjYTlk", "_blank")}
+                onClick={() => window.open("https://t.me/officialsocialmediamarketplace", "_blank")}
                 className="w-full sm:w-3/4 flex items-center justify-center gap-2 bg-[#0088cc] hover:bg-[#0077b3] text-white"
               >
                 <Send className="w-4 h-4" />
@@ -1246,7 +1246,7 @@ const Shop = () => {
               <Button 
                 variant="outline"
                 onClick={() => {
-                  navigator.clipboard.writeText("https://t.me/+0v09JFhl1sZjYTlk");
+                  navigator.clipboard.writeText("https://t.me/officialsocialmediamarketplace");
                   toast.success("Link copied!");
                 }}
                 className="w-full sm:w-3/4 flex items-center justify-center gap-2"
@@ -1653,7 +1653,7 @@ const Shop = () => {
               <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
                 <div className="px-3 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wider">Support</div>
                 <button
-                    onClick={() => window.open('https://chat.whatsapp.com/HCE6nkuaxXm4j2ugwW5exb', '_blank')}
+                    onClick={() => window.open('https://chat.whatsapp.com/G3mMW8GxSg15yNRzNQ3f84', '_blank')}
                     className="w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-100 dark:hover:bg-[#18181b] rounded-lg transition-colors mt-1"
                   >
                     <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900 flex items-center justify-center">
@@ -1667,7 +1667,7 @@ const Shop = () => {
                   </button>
                   
                   <button
-                    onClick={() => window.open('https://t.me/+0v09JFhl1sZjYTlk', '_blank')}
+                    onClick={() => window.open('https://t.me/officialsocialmediamarketplace', '_blank')}
                     className="w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-100 dark:hover:bg-[#18181b] rounded-lg transition-colors"
                   >
                     <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-[#d5e5ff] dark:bg-[#0B0F14] flex items-center justify-center">
@@ -1700,7 +1700,7 @@ const Shop = () => {
       {/* Floating Customer Help (mobile only, above bottom nav) */}
       <div className="md:hidden fixed bottom-24 right-5 z-40">
         <a
-          href="https://t.me/+0v09JFhl1sZjYTlk"
+          href="https://t.me/officialsocialmediamarketplace"
           target="_blank"
           rel="noopener noreferrer"
           className="flex flex-col items-center gap-1 group"
@@ -2241,7 +2241,7 @@ const Shop = () => {
                 <div className="ml-6 space-y-2 animate-in slide-in-from-top duration-200">
                   <button
                     onClick={() => {
-                      window.open('https://chat.whatsapp.com/HCE6nkuaxXm4j2ugwW5exb', '_blank');
+                      window.open('https://chat.whatsapp.com/G3mMW8GxSg15yNRzNQ3f84', '_blank');
                       setShowMenuDrawer(false);
                     }}
                     className="w-full flex items-center gap-3 px-4 py-3 hover:bg-green-50 dark:hover:bg-green-950 transition-colors rounded-lg"
@@ -2259,7 +2259,7 @@ const Shop = () => {
                   
                   <button
                     onClick={() => {
-                      window.open('https://t.me/+0v09JFhl1sZjYTlk', '_blank');
+                      window.open('https://t.me/officialsocialmediamarketplace', '_blank');
                       setShowMenuDrawer(false);
                     }}
                     className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[#e8f1ff] dark:hover:bg-[#0B0F14] transition-colors rounded-lg"
@@ -2387,7 +2387,7 @@ const Shop = () => {
       {/* Floating Social Support Icons */}
       {/* <div className="fixed bottom-8 left-6 z-50">
         <a
-          href="https://chat.whatsapp.com/HCE6nkuaxXm4j2ugwW5exb"
+          href="https://chat.whatsapp.com/G3mMW8GxSg15yNRzNQ3f84"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center justify-center w-14 h-14 bg-green-500 hover:bg-green-600 text-white rounded-full shadow-2xl hover:scale-110 transition-all duration-300"
@@ -2401,7 +2401,7 @@ const Shop = () => {
 
       {/* <div className="fixed bottom-8 right-6 z-50">
         <a
-          href="https://t.me/+0v09JFhl1sZjYTlk"
+          href="https://t.me/officialsocialmediamarketplace"
           target="_blank"
           rel="noopener noreferrer"
           className="flex flex-col items-center gap-1 group"
@@ -2631,7 +2631,7 @@ const Shop = () => {
                     <p className="text-sm font-semibold text-gray-900 dark:text-white">New Telegram Channel</p>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Our previous channel was banned. Join the new channel for updates.</p>
                     <button
-                      onClick={() => window.open("https://t.me/+0v09JFhl1sZjYTlk", "_blank")}
+                      onClick={() => window.open("https://t.me/officialsocialmediamarketplace", "_blank")}
                       className="text-xs font-semibold text-[#7c3aed] mt-1 hover:underline"
                     >
                       Join now
