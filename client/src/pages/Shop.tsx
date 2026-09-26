@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { apiFetch, catalogAPI, purchaseHistoryAPI, catalogCategoriesAPI, warmBackend } from "@/lib/api";
-import { Banknote, ChevronDown, History, Copy, Home, Menu, LogIn, FileText, Headphones, MessageCircle, Wallet, Eye, EyeOff, CreditCard, Zap, List, Check, User, Bell, ArrowRightLeft, Send, MoreHorizontal, LogOut, Plus, BadgeCheck, X, ShoppingCart, Minus, LayoutGrid, Moon, Sun, HelpCircle, Gift } from "lucide-react";
+import { Banknote, ChevronDown, History, Copy, Home, Menu, LogIn, FileText, Headphones, MessageCircle, Wallet, Eye, EyeOff, CreditCard, Zap, List, Check, User, Bell, ArrowRightLeft, Send, MoreHorizontal, LogOut, Plus, BadgeCheck, X, ShoppingCart, Minus, LayoutGrid, Moon, Sun, HelpCircle, Gift, Smartphone } from "lucide-react";
 import bannerImg from "@/assets/ban.jpg";
 import bannerLog1 from "@/assets/bannerlog1.jpg";
 import bannerLog2 from "@/assets/bannerlog2.jpg";
@@ -16,6 +16,7 @@ import bannerLog3 from "@/assets/bannerlogo3.png";
 import { Carousel, CarouselContent, CarouselItem, type CarouselApi } from "@/components/ui/carousel";
 import { useTheme } from "@/components/theme-provider";
 import logo from "@/assets/pics (2).png";
+import BuyNumbers from "@/components/numbers/BuyNumbers";
 // Removed demo product assets; shop now shows only database products
 
 interface SerialNumber {
@@ -165,6 +166,7 @@ const Shop = () => {
   const [showAddMoneyDialog, setShowAddMoneyDialog] = useState(false);
   const [showConvertDialog, setShowConvertDialog] = useState(false);
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
+  const [showBuyNumbers, setShowBuyNumbers] = useState(false);
   const [showQuickPayDetailsDialog, setShowQuickPayDetailsDialog] = useState(false);
   const [quickPayDetails, setQuickPayDetails] = useState<{
     accountName?: string;
@@ -1198,6 +1200,18 @@ const Shop = () => {
         />
       </div>
 
+      {/* Buy Numbers Page */}
+      {showBuyNumbers && user && (
+        <BuyNumbers
+          user={user}
+          onClose={() => setShowBuyNumbers(false)}
+          onBalanceChange={(balance) => {
+            setUser((prev) => (prev ? { ...prev, balance } : prev));
+            localStorage.setItem("currentUser", JSON.stringify({ ...user, balance }));
+          }}
+        />
+      )}
+
       {/* Mobile Header */}
       <div className="md:hidden sticky top-0 z-50 bg-gray-50/95 dark:bg-black/95 backdrop-blur-md px-4 py-3 border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-center justify-between gap-2">
@@ -1498,14 +1512,14 @@ const Shop = () => {
                 </button>
 
                 <button
-                  onClick={scrollToProducts}
+                  onClick={() => setShowBuyNumbers(true)}
                   className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors"
                 >
                   <div className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center text-white shadow-lg">
-                    <ShoppingCart className="h-5 w-5" />
+                    <Smartphone className="h-5 w-5" />
                   </div>
-                  <span className="text-xs font-semibold text-gray-800 dark:text-gray-200">Buy accounts</span>
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400 -mt-1">Get started</span>
+                  <span className="text-xs font-semibold text-gray-800 dark:text-gray-200">Buy Numbers</span>
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400 -mt-1">USA & others</span>
                 </button>
 
                 <button

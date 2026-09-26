@@ -61,6 +61,59 @@ export interface IReferralBonus extends Document {
   createdAt: Date;
 }
 
+export interface INumberActivation extends Document {
+  userId: string;
+  email: string;
+  activationId: string;
+  phoneNumber: string;
+  service: string;
+  serviceName?: string;
+  country: string;
+  countryName?: string;
+  priceUsd: number;
+  priceNgn: number;
+  status: "waiting" | "code_received" | "completed" | "cancelled";
+  smsCode?: string;
+  smsText?: string;
+  expiresAt?: Date;
+  createdAt: Date;
+}
+
+export interface INumberRental extends Document {
+  userId: string;
+  email: string;
+  rentalId: string;
+  phoneNumber: string;
+  serviceCode: string;
+  serviceName?: string;
+  period: string;
+  priceUsd: number;
+  priceNgn: number;
+  status: "active" | "cancelled" | "expired";
+  autoRenew: boolean;
+  expiresAt: Date;
+  createdAt: Date;
+}
+
+export interface INumberTransaction extends Document {
+  userId: string;
+  email: string;
+  reference: string;
+  amount: number;
+  type: "activation" | "rental" | "refund";
+  method: "wallet";
+  status: "completed" | "pending" | "failed";
+  activationId?: string;
+  rentalId?: string;
+  createdAt: Date;
+}
+
+export interface ISettings extends Document {
+  markupPercentage: number;
+  exchangeRate: number;
+  updatedAt?: Date;
+}
+
 export interface IProductItem {
   _id?: mongoose.Types.ObjectId;
   username: string;
@@ -260,6 +313,64 @@ const ReferralBonusSchema = new Schema<IReferralBonus>({
 });
 ReferralBonusSchema.index({ createdAt: -1 });
 
+const NumberActivationSchema = new Schema<INumberActivation>({
+  userId: { type: String, required: true, index: true },
+  email: { type: String, required: true },
+  activationId: { type: String, required: true, unique: true },
+  phoneNumber: { type: String, required: true },
+  service: { type: String, required: true },
+  serviceName: { type: String },
+  country: { type: String, required: true },
+  countryName: { type: String },
+  priceUsd: { type: Number, required: true },
+  priceNgn: { type: Number, required: true },
+  status: { type: String, enum: ["waiting", "code_received", "completed", "cancelled"], default: "waiting" },
+  smsCode: { type: String },
+  smsText: { type: String },
+  expiresAt: { type: Date },
+  createdAt: { type: Date, default: Date.now },
+});
+NumberActivationSchema.index({ createdAt: -1 });
+NumberActivationSchema.index({ status: 1 });
+
+const NumberRentalSchema = new Schema<INumberRental>({
+  userId: { type: String, required: true, index: true },
+  email: { type: String, required: true },
+  rentalId: { type: String, required: true, unique: true },
+  phoneNumber: { type: String, required: true },
+  serviceCode: { type: String, required: true },
+  serviceName: { type: String },
+  period: { type: String, required: true },
+  priceUsd: { type: Number, required: true },
+  priceNgn: { type: Number, required: true },
+  status: { type: String, enum: ["active", "cancelled", "expired"], default: "active" },
+  autoRenew: { type: Boolean, default: false },
+  expiresAt: { type: Date, required: true },
+  createdAt: { type: Date, default: Date.now },
+});
+NumberRentalSchema.index({ createdAt: -1 });
+NumberRentalSchema.index({ status: 1 });
+
+const NumberTransactionSchema = new Schema<INumberTransaction>({
+  userId: { type: String, required: true, index: true },
+  email: { type: String, required: true },
+  reference: { type: String, required: true, unique: true },
+  amount: { type: Number, required: true },
+  type: { type: String, enum: ["activation", "rental", "refund"], required: true },
+  method: { type: String, default: "wallet" },
+  status: { type: String, enum: ["completed", "pending", "failed"], default: "completed" },
+  activationId: { type: String },
+  rentalId: { type: String },
+  createdAt: { type: Date, default: Date.now },
+});
+NumberTransactionSchema.index({ createdAt: -1 });
+
+const SettingsSchema = new Schema<ISettings>({
+  markupPercentage: { type: Number, default: 0 },
+  exchangeRate: { type: Number, default: 1500 },
+  updatedAt: { type: Date, default: Date.now },
+});
+
 export const Cart = mongoose.model<ICart>("Cart", CartSchema);
 export const Payment = mongoose.model<IPayment>("Payment", PaymentSchema);
 export const User = mongoose.model<IUser>("User", UserSchema);
@@ -277,3 +388,7 @@ const CatalogCategorySchema = new Schema<ICatalogCategory>({
 
 export const CatalogCategory = mongoose.model<ICatalogCategory>("CatalogCategory", CatalogCategorySchema);
 export const ReferralBonus = mongoose.model<IReferralBonus>("ReferralBonus", ReferralBonusSchema);
+export const NumberActivation = mongoose.model<INumberActivation>("NumberActivation", NumberActivationSchema);
+export const NumberRental = mongoose.model<INumberRental>("NumberRental", NumberRentalSchema);
+export const NumberTransaction = mongoose.model<INumberTransaction>("NumberTransaction", NumberTransactionSchema);
+export const Settings = mongoose.model<ISettings>("Settings", SettingsSchema);

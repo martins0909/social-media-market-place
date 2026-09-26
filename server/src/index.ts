@@ -8,7 +8,7 @@ import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 import crypto from "crypto";
 import axios from "axios";
-import { User, Admin, Cart, Payment, Product, CatalogProduct, PurchaseHistory, CatalogCategory, ReferralBonus } from "./models";
+import { User, Admin, Cart, Payment, Product, CatalogProduct, PurchaseHistory, CatalogCategory, ReferralBonus, NumberActivation, NumberRental, NumberTransaction, Settings } from "./models";
 import paymentsRouter from "./routes/payments";
 
 const app = express();
@@ -1333,6 +1333,437 @@ app.get("/api/payments/verify/:reference?", async (req: Request, res: Response) 
       console.error("Unknown verify error:", err);
       return res.status(500).json({ error: "Verification failed" });
     }
+  }
+});
+
+// ======== BLOOMSMS NUMBER MODULE ========
+
+const BLOOMSMS_BASE = "https://bloomsms.com/api/v1";
+const BLOOMSMS_API_KEY = process.env.BLOOMSMS_API_KEY || "";
+
+async function ensureSettings() {
+  let settings = await Settings.findOne().exec();
+  if (!settings) {
+    settings = await Settings.create({ markupPercentage: 0, exchangeRate: 1500 });
+  }
+  return settings;
+}
+
+function calculateNgnPrice(usd: number, exchangeRate: number, markupPercentage: number) {
+  return Math.ceil(usd * exchangeRate * (1 + markupPercentage / 100));
+}
+
+async function bloomRequest(method: string, path: string, body?: any) {
+  if (!BLOOMSMS_API_KEY) {
+    throw new Error("BloomSMS API key is not configured");
+  }
+  const url = `${BLOOMSMS_BASE}${path}`;
+  const res = await axios({
+    method,
+    url,
+    headers: {
+      Authorization: `Bearer ${BLOOMSMS_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    data: body,
+    timeout: 20000,
+  });
+  return res.data;
+}
+
+function generateReference(prefix = "NUM") {
+  return `${prefix}_${Date.now()}_${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+}
+
+// Settings: get
+app.get("/api/numbers/settings", async (req: Request, res: Response) => {
+  try {
+    const settings = await ensureSettings();
+    res.json({ markupPercentage: settings.markupPercentage, exchangeRate: settings.exchangeRate });
+  } catch (err) {
+    console.error("Error fetching number settings:", err);
+    res.status(500).json({ error: "Failed to fetch settings" });
+  }
+});
+
+// Settings: update (admin only, protected by basic admin auth if desired)
+app.put("/api/numbers/settings", async (req: Request, res: Response) => {
+  try {
+    const { markupPercentage, exchangeRate } = req.body;
+    const settings = await ensureSettings();
+    if (markupPercentage !== undefined) settings.markupPercentage = Number(markupPercentage);
+    if (exchangeRate !== undefined) settings.exchangeRate = Number(exchangeRate);
+    settings.updatedAt = new Date();
+    await settings.save();
+    res.json({ markupPercentage: settings.markupPercentage, exchangeRate: settings.exchangeRate });
+  } catch (err) {
+    console.error("Error updating number settings:", err);
+    res.status(500).json({ error: "Failed to update settings" });
+  }
+});
+
+// Proxy: list countries
+app.get("/api/numbers/countries", async (req: Request, res: Response) => {
+  try {
+    const data = await bloomRequest("GET", "/countries");
+    res.json(data);
+  } catch (err: any) {
+    console.error("BloomSMS countries error:", err.response?.data || err.message);
+    res.status(502).json({ error: "Failed to fetch countries", details: err.response?.data || err.message });
+  }
+});
+
+// Proxy: list services for a country
+app.get("/api/numbers/services", async (req: Request, res: Response) => {
+  try {
+    const country = (req.query.country as string) || "187";
+    const data = await bloomRequest("GET", `/services?country=${country}`);
+    const settings = await ensureSettings();
+    if (data?.status === "success" && Array.isArray(data.data?.services)) {
+      data.data.services = data.data.services.map((s: any) => ({
+        ...s,
+        priceNgn: calculateNgnPrice(Number(s.price), settings.exchangeRate, settings.markupPercentage),
+      }));
+    }
+    res.json(data);
+  } catch (err: any) {
+    console.error("BloomSMS services error:", err.response?.data || err.message);
+    res.status(502).json({ error: "Failed to fetch services", details: err.response?.data || err.message });
+  }
+});
+
+// Rent a number (short-term activation)
+app.post("/api/numbers/activations", async (req: Request, res: Response) => {
+  const session = await mongoose.startSession();
+  try {
+    const { userId, service, country, serviceName, countryName } = req.body;
+    if (!userId || !service || !country) {
+      return res.status(400).json({ error: "userId, service and country are required" });
+    }
+    const user = await User.findById(userId).exec();
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    // Get live price from BloomSMS
+    const servicesData = await bloomRequest("GET", `/services?country=${country}&service=${service}`);
+    const serviceInfo = servicesData?.data?.services?.find((s: any) => s.code === service);
+    const priceUsd = serviceInfo ? Number(serviceInfo.price) : 0;
+    if (!priceUsd) {
+      return res.status(400).json({ error: "Service not available for this country" });
+    }
+
+    const settings = await ensureSettings();
+    const priceNgn = calculateNgnPrice(priceUsd, settings.exchangeRate, settings.markupPercentage);
+
+    if ((user.balance || 0) < priceNgn) {
+      return res.status(400).json({ error: "Insufficient balance" });
+    }
+
+    // Create activation with BloomSMS
+    const bloomResp = await bloomRequest("POST", "/activations", { service, country });
+    if (bloomResp?.status !== "success" || !bloomResp.data) {
+      return res.status(502).json({ error: "Failed to rent number from provider", details: bloomResp });
+    }
+
+    const bloom = bloomResp.data;
+
+    await session.withTransaction(async () => {
+      await User.updateOne({ _id: user._id }, { $inc: { balance: -priceNgn } }).session(session).exec();
+
+      const activation = new NumberActivation({
+        userId: user._id.toString(),
+        email: user.email,
+        activationId: String(bloom.activation_id),
+        phoneNumber: String(bloom.phone_number),
+        service,
+        serviceName: serviceName || serviceInfo?.name || service,
+        country,
+        countryName: countryName || "",
+        priceUsd,
+        priceNgn,
+        status: "waiting",
+        expiresAt: bloom.expires_at ? new Date(bloom.expires_at) : undefined,
+      });
+      await activation.save({ session });
+
+      await new NumberTransaction({
+        userId: user._id.toString(),
+        email: user.email,
+        reference: generateReference("ACT"),
+        amount: priceNgn,
+        type: "activation",
+        method: "wallet",
+        status: "completed",
+        activationId: String(bloom.activation_id),
+      }).save({ session });
+
+      res.json({
+        ok: true,
+        activation: {
+          id: activation._id,
+          activationId: activation.activationId,
+          phoneNumber: activation.phoneNumber,
+          service: activation.serviceName,
+          country: activation.countryName,
+          priceNgn: activation.priceNgn,
+          status: activation.status,
+          expiresAt: activation.expiresAt,
+        },
+        newBalance: (user.balance || 0) - priceNgn,
+      });
+    });
+  } catch (err: any) {
+    console.error("Rent number error:", err.response?.data || err.message);
+    res.status(500).json({ error: "Failed to rent number", details: err.response?.data || err.message });
+  } finally {
+    session.endSession();
+  }
+});
+
+// Get user's activations
+app.get("/api/numbers/activations/:userId", async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const activations = await NumberActivation.find({ userId }).sort({ createdAt: -1 }).lean();
+    res.json(activations);
+  } catch (err) {
+    console.error("Error fetching activations:", err);
+    res.status(500).json({ error: "Failed to fetch activations" });
+  }
+});
+
+// Poll activation status from BloomSMS and update local record
+app.get("/api/numbers/activations/status/:activationId", async (req: Request, res: Response) => {
+  try {
+    const { activationId } = req.params;
+    const bloomResp = await bloomRequest("GET", `/activations/${activationId}`);
+    const bloom = bloomResp?.data;
+    if (!bloom) return res.status(502).json({ error: "Failed to fetch activation status" });
+
+    const update: any = {};
+    if (bloom.activation_status) update.status = bloom.activation_status;
+    if (bloom.sms?.code) {
+      update.smsCode = bloom.sms.code;
+      update.smsText = bloom.sms.full_text;
+      update.status = "code_received";
+    }
+    if (Object.keys(update).length > 0) {
+      await NumberActivation.updateOne({ activationId }, update).exec();
+    }
+
+    const activation = await NumberActivation.findOne({ activationId }).lean();
+    res.json({ ...bloomResp, local: activation });
+  } catch (err: any) {
+    console.error("Activation status error:", err.response?.data || err.message);
+    res.status(500).json({ error: "Failed to fetch status", details: err.response?.data || err.message });
+  }
+});
+
+// Update activation status (cancel/complete)
+app.patch("/api/numbers/activations/:activationId", async (req: Request, res: Response) => {
+  try {
+    const { activationId } = req.params;
+    const { status } = req.body; // cancel | complete
+    if (!status) return res.status(400).json({ error: "status is required" });
+
+    const bloomResp = await bloomRequest("PATCH", `/activations/${activationId}`, { status });
+    await NumberActivation.updateOne({ activationId }, { status: status === "cancel" ? "cancelled" : "completed" }).exec();
+    res.json(bloomResp);
+  } catch (err: any) {
+    console.error("Update activation error:", err.response?.data || err.message);
+    res.status(500).json({ error: "Failed to update activation", details: err.response?.data || err.message });
+  }
+});
+
+// Create long rental
+app.post("/api/numbers/rentals", async (req: Request, res: Response) => {
+  const session = await mongoose.startSession();
+  try {
+    const { userId, service, period, autoRenew, serviceName } = req.body;
+    if (!userId || !service || !period) {
+      return res.status(400).json({ error: "userId, service and period are required" });
+    }
+    const user = await User.findById(userId).exec();
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const bloomResp = await bloomRequest("POST", "/long-rentals", { service, period, auto_renew: !!autoRenew });
+    if (bloomResp?.status !== "success" || !bloomResp.data) {
+      return res.status(502).json({ error: "Failed to create rental", details: bloomResp });
+    }
+    const bloom = bloomResp.data;
+
+    const settings = await ensureSettings();
+    const priceUsd = Number(bloom.price) || 0;
+    const priceNgn = calculateNgnPrice(priceUsd, settings.exchangeRate, settings.markupPercentage);
+
+    if ((user.balance || 0) < priceNgn) {
+      return res.status(400).json({ error: "Insufficient balance" });
+    }
+
+    await session.withTransaction(async () => {
+      await User.updateOne({ _id: user._id }, { $inc: { balance: -priceNgn } }).session(session).exec();
+
+      const rental = new NumberRental({
+        userId: user._id.toString(),
+        email: user.email,
+        rentalId: String(bloom.id),
+        phoneNumber: String(bloom.phone_number),
+        serviceCode: service,
+        serviceName: serviceName || bloom.service_name || service,
+        period,
+        priceUsd,
+        priceNgn,
+        status: "active",
+        autoRenew: !!autoRenew,
+        expiresAt: bloom.expires_at ? new Date(bloom.expires_at) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      });
+      await rental.save({ session });
+
+      await new NumberTransaction({
+        userId: user._id.toString(),
+        email: user.email,
+        reference: generateReference("RNT"),
+        amount: priceNgn,
+        type: "rental",
+        method: "wallet",
+        status: "completed",
+        rentalId: String(bloom.id),
+      }).save({ session });
+
+      res.json({
+        ok: true,
+        rental: {
+          id: rental._id,
+          rentalId: rental.rentalId,
+          phoneNumber: rental.phoneNumber,
+          service: rental.serviceName,
+          period: rental.period,
+          priceNgn: rental.priceNgn,
+          status: rental.status,
+          expiresAt: rental.expiresAt,
+        },
+        newBalance: (user.balance || 0) - priceNgn,
+      });
+    });
+  } catch (err: any) {
+    console.error("Create rental error:", err.response?.data || err.message);
+    res.status(500).json({ error: "Failed to create rental", details: err.response?.data || err.message });
+  } finally {
+    session.endSession();
+  }
+});
+
+// Get user rentals
+app.get("/api/numbers/rentals/:userId", async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const rentals = await NumberRental.find({ userId }).sort({ createdAt: -1 }).lean();
+    res.json(rentals);
+  } catch (err) {
+    console.error("Error fetching rentals:", err);
+    res.status(500).json({ error: "Failed to fetch rentals" });
+  }
+});
+
+// Cancel rental
+app.post("/api/numbers/rentals/:rentalId/cancel", async (req: Request, res: Response) => {
+  try {
+    const { rentalId } = req.params;
+    const bloomResp = await bloomRequest("POST", `/long-rentals/${rentalId}/cancel`);
+    await NumberRental.updateOne({ rentalId }, { status: "cancelled" }).exec();
+    res.json(bloomResp);
+  } catch (err: any) {
+    console.error("Cancel rental error:", err.response?.data || err.message);
+    res.status(500).json({ error: "Failed to cancel rental", details: err.response?.data || err.message });
+  }
+});
+
+// Get user transactions
+app.get("/api/numbers/transactions/:userId", async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const transactions = await NumberTransaction.find({ userId }).sort({ createdAt: -1 }).lean();
+    res.json(transactions);
+  } catch (err) {
+    console.error("Error fetching number transactions:", err);
+    res.status(500).json({ error: "Failed to fetch transactions" });
+  }
+});
+
+// Webhook: receive SMS/OTP from BloomSMS
+app.post("/api/numbers/webhook", async (req: Request, res: Response) => {
+  try {
+    const { event, data } = req.body;
+    if (event === "sms.received" && data?.activation_id) {
+      const update: any = {};
+      if (data.sms?.code) {
+        update.smsCode = String(data.sms.code);
+        update.smsText = String(data.sms.full_text || "");
+      }
+      if (data.status) update.status = String(data.status);
+      if (Object.keys(update).length > 0) {
+        await NumberActivation.updateOne({ activationId: String(data.activation_id) }, update).exec();
+      }
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Webhook error:", err);
+    res.status(500).json({ error: "Webhook processing failed" });
+  }
+});
+
+// Admin: all activations
+app.get("/api/numbers/admin/activations", async (req: Request, res: Response) => {
+  try {
+    const activations = await NumberActivation.find().sort({ createdAt: -1 }).lean();
+    res.json(activations);
+  } catch (err) {
+    console.error("Admin activations error:", err);
+    res.status(500).json({ error: "Failed to fetch activations" });
+  }
+});
+
+// Admin: USA activations (country 187)
+app.get("/api/numbers/admin/usa", async (req: Request, res: Response) => {
+  try {
+    const activations = await NumberActivation.find({ country: "187" }).sort({ createdAt: -1 }).lean();
+    res.json(activations);
+  } catch (err) {
+    console.error("Admin USA error:", err);
+    res.status(500).json({ error: "Failed to fetch USA activations" });
+  }
+});
+
+// Admin: activations by country
+app.get("/api/numbers/admin/countries/:country", async (req: Request, res: Response) => {
+  try {
+    const { country } = req.params;
+    const activations = await NumberActivation.find({ country }).sort({ createdAt: -1 }).lean();
+    res.json(activations);
+  } catch (err) {
+    console.error("Admin country error:", err);
+    res.status(500).json({ error: "Failed to fetch country activations" });
+  }
+});
+
+// Admin: all rentals
+app.get("/api/numbers/admin/rentals", async (req: Request, res: Response) => {
+  try {
+    const rentals = await NumberRental.find().sort({ createdAt: -1 }).lean();
+    res.json(rentals);
+  } catch (err) {
+    console.error("Admin rentals error:", err);
+    res.status(500).json({ error: "Failed to fetch rentals" });
+  }
+});
+
+// Admin: all transactions
+app.get("/api/numbers/admin/transactions", async (req: Request, res: Response) => {
+  try {
+    const transactions = await NumberTransaction.find().sort({ createdAt: -1 }).lean();
+    res.json(transactions);
+  } catch (err) {
+    console.error("Admin transactions error:", err);
+    res.status(500).json({ error: "Failed to fetch transactions" });
   }
 });
 
