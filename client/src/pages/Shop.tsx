@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { apiFetch, catalogAPI, purchaseHistoryAPI, catalogCategoriesAPI, warmBackend } from "@/lib/api";
-import { Banknote, ChevronDown, History, Copy, Home, Menu, LogIn, FileText, Headphones, MessageCircle, Wallet, Eye, EyeOff, CreditCard, Zap, List, Check, User, Bell, ArrowRightLeft, Send, MoreHorizontal, LogOut, Plus, BadgeCheck, X, ShoppingCart, Minus, LayoutGrid, Moon, Sun, HelpCircle } from "lucide-react";
+import { Banknote, ChevronDown, History, Copy, Home, Menu, LogIn, FileText, Headphones, MessageCircle, Wallet, Eye, EyeOff, CreditCard, Zap, List, Check, User, Bell, ArrowRightLeft, Send, MoreHorizontal, LogOut, Plus, BadgeCheck, X, ShoppingCart, Minus, LayoutGrid, Moon, Sun, HelpCircle, Gift } from "lucide-react";
 import bannerImg from "@/assets/ban.jpg";
 import bannerLog1 from "@/assets/bannerlog1.jpg";
 import bannerLog2 from "@/assets/bannerlog2.jpg";
@@ -120,7 +120,33 @@ const Shop = () => {
       setDepositHistory([]);
     }
   };
+
+  const loadReferralBonuses = async (userId: string) => {
+    try {
+      const res = await apiFetch(`/api/referral-bonuses/${userId}`);
+      setReferralBonuses(res as Array<{
+        _id?: string;
+        amount: number;
+        type: "referrer" | "buyer";
+        buyerEmail?: string;
+        referrerEmail?: string;
+        purchaseAmount: number;
+        createdAt: string;
+      }>);
+    } catch (e) {
+      setReferralBonuses([]);
+    }
+  };
   const [purchaseHistory, setPurchaseHistory] = useState<PurchaseHistoryItem[]>([]);
+  const [referralBonuses, setReferralBonuses] = useState<Array<{
+    _id?: string;
+    amount: number;
+    type: "referrer" | "buyer";
+    buyerEmail?: string;
+    referrerEmail?: string;
+    purchaseAmount: number;
+    createdAt: string;
+  }>>([]);
   const [products, setProducts] = useState<Product[]>(initialProducts);
   const [loadingProducts, setLoadingProducts] = useState(true);
   // Categories from API
@@ -210,6 +236,7 @@ const Shop = () => {
     // Load products/categories (parallel) and then purchase history (deferred)
     loadProductsAndHistory(parsedUser.id, { silent: hydratedFromCache });
     loadDepositHistory(parsedUser.id);
+    loadReferralBonuses(parsedUser.id);
   }, [navigate]);
 
   // Periodically refresh user balance from backend (every 10 seconds)
@@ -369,6 +396,7 @@ const Shop = () => {
         assignedSerials: h.assignedSerials,
         purchaseDate: h.purchaseDate.toString()
       })));
+      loadReferralBonuses(user.id);
 
       setPurchaseSummaryData({
         product,
@@ -467,6 +495,7 @@ const Shop = () => {
         assignedSerials: h.assignedSerials,
         purchaseDate: h.purchaseDate.toString()
       })));
+      loadReferralBonuses(user.id);
 
       // Show purchase summary dialog
       setPurchaseSummaryData({
@@ -1179,7 +1208,10 @@ const Shop = () => {
           >
             <Menu className="h-6 w-6 text-gray-700 dark:text-gray-200" />
           </button>
-          <img src={logo} alt="Social Media Marketplace" className="h-8 w-auto max-w-[140px] object-contain" />
+          <div className="flex items-center gap-2">
+            <img src={logo} alt="Social Media Marketplace" className="h-8 w-auto max-w-[140px] object-contain" />
+            <span className="text-sm font-black tracking-tight text-[#1565C0] dark:text-[#4d9cff]">SMMP</span>
+          </div>
           <div className="flex items-center gap-1">
             <button 
               onClick={() => setShowBalanceModal(true)}
@@ -1195,17 +1227,6 @@ const Shop = () => {
             >
               <Bell className="h-5 w-5 text-gray-700 dark:text-gray-200" />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
-            </button>
-            <button 
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
-              aria-label="Toggle theme"
-            >
-              {theme === "dark" ? (
-                <Sun className="h-5 w-5 text-amber-400" />
-              ) : (
-                <Moon className="h-5 w-5 text-gray-700" />
-              )}
             </button>
             <button 
               onClick={() => setShowMenuDrawer(true)}
@@ -2275,6 +2296,25 @@ const Shop = () => {
               )}
 
               <button
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                className="w-full flex items-center gap-3 px-4 py-4 hover:bg-[#e8f1ff] dark:hover:bg-[#0B0F14] transition-colors"
+              >
+                <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-amber-100 dark:bg-gray-800 flex items-center justify-center">
+                  {theme === "dark" ? (
+                    <Sun className="h-5 w-5 text-amber-500" />
+                  ) : (
+                    <Moon className="h-5 w-5 text-gray-700" />
+                  )}
+                </div>
+                <div className="text-left">
+                  <div className="font-medium text-gray-800 dark:text-gray-200">
+                    {theme === "dark" ? "Light Mode" : "Dark Mode"}
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Toggle appearance</div>
+                </div>
+              </button>
+
+              <button
                 onClick={() => {
                   handleSignOut();
                   setShowMenuDrawer(false);
@@ -2323,23 +2363,34 @@ const Shop = () => {
               <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Transaction Statistics</h3>
               
               {/* Stats Cards */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-white dark:bg-[#09090b] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center gap-2 mb-2">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-white dark:bg-[#09090b] p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center gap-1.5 mb-2">
                     <History className="h-4 w-4 text-green-600" />
                     <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Purchases</span>
                   </div>
                   <div className="text-2xl font-bold text-green-600">{purchaseHistory.length}</div>
-                  <div className="text-xs text-gray-500">Total transactions</div>
+                  <div className="text-xs text-gray-500">Total</div>
                 </div>
-                
-                <div className="bg-white dark:bg-[#09090b] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center gap-2 mb-2">
+
+                <div className="bg-white dark:bg-[#09090b] p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center gap-1.5 mb-2">
                     <Banknote className="h-4 w-4 text-[#1565C0]" />
                     <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Deposits</span>
                   </div>
                   <div className="text-2xl font-bold text-[#1565C0]">{depositHistory.length}</div>
-                  <div className="text-xs text-gray-500">Fund additions</div>
+                  <div className="text-xs text-gray-500">Total</div>
+                </div>
+
+                <div className="bg-white dark:bg-[#09090b] p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Gift className="h-4 w-4 text-purple-600" />
+                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Referrals</span>
+                  </div>
+                  <div className="text-2xl font-bold text-purple-600">
+                    ₦{referralBonuses.reduce((sum, b) => sum + (b.amount || 0), 0).toFixed(0)}
+                  </div>
+                  <div className="text-xs text-gray-500">{referralBonuses.length} bonuses</div>
                 </div>
               </div>
 
@@ -2368,6 +2419,32 @@ const Shop = () => {
                   {purchaseHistory.length === 0 && depositHistory.length === 0 && (
                     <div className="text-center py-4 text-gray-500 dark:text-gray-400">
                       No transactions yet
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Referral Bonus History */}
+              <div className="bg-white dark:bg-[#09090b] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-3">Referral Bonus History</h4>
+                <div className="space-y-2">
+                  {referralBonuses.slice(0, 5).map((bonus, index) => (
+                    <div key={bonus._id || index} className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700 last:border-b-0">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                        <div className="text-sm text-gray-800 dark:text-gray-200">
+                          {bonus.type === "referrer" ? "Referral reward" : "Signup bonus"}
+                          <span className="block text-xs text-gray-500">
+                            {bonus.type === "referrer" ? `from ${bonus.buyerEmail || "a user"}` : `via ${bonus.referrerEmail || "referrer"}`}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-sm font-medium text-purple-600">+₦{bonus.amount.toFixed(2)}</div>
+                    </div>
+                  ))}
+                  {referralBonuses.length === 0 && (
+                    <div className="text-center py-4 text-gray-500 dark:text-gray-400">
+                      No referral bonuses yet
                     </div>
                   )}
                 </div>

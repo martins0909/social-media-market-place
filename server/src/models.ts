@@ -51,6 +51,16 @@ export interface IAdmin extends Document {
   createdAt: Date;
 }
 
+export interface IReferralBonus extends Document {
+  userId: mongoose.Types.ObjectId;
+  amount: number;
+  type: "referrer" | "buyer";
+  buyerEmail?: string;
+  referrerEmail?: string;
+  purchaseAmount: number;
+  createdAt: Date;
+}
+
 export interface IProductItem {
   _id?: mongoose.Types.ObjectId;
   username: string;
@@ -239,6 +249,17 @@ const PurchaseHistorySchema = new Schema<IPurchaseHistory>({
 // Index for efficient sorting by purchaseDate
 PurchaseHistorySchema.index({ purchaseDate: -1 });
 
+const ReferralBonusSchema = new Schema<IReferralBonus>({
+  userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+  amount: { type: Number, required: true },
+  type: { type: String, enum: ["referrer", "buyer"], required: true },
+  buyerEmail: { type: String },
+  referrerEmail: { type: String },
+  purchaseAmount: { type: Number, required: true },
+  createdAt: { type: Date, default: Date.now },
+});
+ReferralBonusSchema.index({ createdAt: -1 });
+
 export const Cart = mongoose.model<ICart>("Cart", CartSchema);
 export const Payment = mongoose.model<IPayment>("Payment", PaymentSchema);
 export const User = mongoose.model<IUser>("User", UserSchema);
@@ -255,3 +276,4 @@ const CatalogCategorySchema = new Schema<ICatalogCategory>({
 });
 
 export const CatalogCategory = mongoose.model<ICatalogCategory>("CatalogCategory", CatalogCategorySchema);
+export const ReferralBonus = mongoose.model<IReferralBonus>("ReferralBonus", ReferralBonusSchema);

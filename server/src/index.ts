@@ -8,7 +8,7 @@ import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 import crypto from "crypto";
 import axios from "axios";
-import { User, Admin, Cart, Payment, Product, CatalogProduct, PurchaseHistory, CatalogCategory } from "./models";
+import { User, Admin, Cart, Payment, Product, CatalogProduct, PurchaseHistory, CatalogCategory, ReferralBonus } from "./models";
 import paymentsRouter from "./routes/payments";
 
 const app = express();
@@ -1000,6 +1000,23 @@ app.get("/api/purchase-history/:userId", async (req: Request, res: Response) => 
   }
 });
 
+// Get referral bonus history for a user
+app.get("/api/referral-bonuses/:userId", async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    if (!mongoose.isValidObjectId(userId)) {
+      return res.status(400).json({ error: "Invalid user ID" });
+    }
+    const bonuses = await ReferralBonus.find({ userId })
+      .sort({ createdAt: -1 })
+      .lean();
+    res.json(bonuses);
+  } catch (err) {
+    console.error("Error fetching referral bonuses:", err);
+    res.status(500).json({ error: "Failed to fetch referral bonuses" });
+  }
+});
+
 // Create purchase history entry
 app.post("/api/purchase-history", async (req: Request, res: Response) => {
   try {
@@ -1147,10 +1164,11 @@ app.post("/api/purchase/complete", async (req: Request, res: Response) => {
         // Referral purchase bonus: if user was referred and this is their
         // first qualifying purchase (>= ₦3,000), reward referrer ₦300 and buyer ₦200.
         let referralBuyerBonus = 0;
+        let referrerDoc: any = null;
         if (user.referredBy && totalPrice >= 3000 && !user.referralPurchaseBonusReceived) {
-          const referrer = await User.findOne({ referralCode: user.referredBy }).session(session).exec();
-          if (referrer) {
-            await User.updateOne({ _id: referrer._id }, { $inc: { balance: 300 } }).session(session).exec();
+          referrerDoc = await User.findOne({ referralCode: user.referredBy }).session(session).exec();
+          if (referrerDoc) {
+            await User.updateOne({ _id: referrerDoc._id }, { $inc: { balance: 300 } }).session(session).exec();
             referralBuyerBonus = 200;
           }
         }
@@ -1163,6 +1181,23 @@ app.post("/api/purchase/complete", async (req: Request, res: Response) => {
           userUpdate,
           { new: true, session }
         ).exec();
+
+        // Record referral bonus history inside the same transaction.
+        if (referralBuyerBonus > 0 && referrerDoc) {
+          await ReferralBonus.create([{
+            userId: referrerDoc._id,
+            amount: 300,
+            type: "referrer",
+            buyerEmail: user.email,
+            purchaseAmount: totalPrice,
+          }, {
+            userId: user._id,
+            amount: 200,
+            type: "buyer",
+            referrerEmail: referrerDoc.email,
+            purchaseAmount: totalPrice,
+          }], { session });
+        }
 
         responsePayload = {
           success: true,
