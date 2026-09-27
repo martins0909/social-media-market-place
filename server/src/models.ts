@@ -114,6 +114,16 @@ export interface ISettings extends Document {
   updatedAt?: Date;
 }
 
+export interface ITransfer extends Document {
+  senderId: string;
+  senderEmail: string;
+  recipientId: string;
+  recipientEmail: string;
+  amount: number;
+  status: "completed" | "failed";
+  createdAt: Date;
+}
+
 export interface IProductItem {
   _id?: mongoose.Types.ObjectId;
   username: string;
@@ -371,6 +381,17 @@ const SettingsSchema = new Schema<ISettings>({
   updatedAt: { type: Date, default: Date.now },
 });
 
+const TransferSchema = new Schema<ITransfer>({
+  senderId: { type: String, required: true, index: true },
+  senderEmail: { type: String, required: true },
+  recipientId: { type: String, required: true, index: true },
+  recipientEmail: { type: String, required: true },
+  amount: { type: Number, required: true },
+  status: { type: String, enum: ["completed", "failed"], default: "completed" },
+  createdAt: { type: Date, default: Date.now },
+});
+TransferSchema.index({ createdAt: -1 });
+
 export const Cart = mongoose.model<ICart>("Cart", CartSchema);
 export const Payment = mongoose.model<IPayment>("Payment", PaymentSchema);
 export const User = mongoose.model<IUser>("User", UserSchema);
@@ -392,3 +413,4 @@ export const NumberActivation = mongoose.model<INumberActivation>("NumberActivat
 export const NumberRental = mongoose.model<INumberRental>("NumberRental", NumberRentalSchema);
 export const NumberTransaction = mongoose.model<INumberTransaction>("NumberTransaction", NumberTransactionSchema);
 export const Settings = mongoose.model<ISettings>("Settings", SettingsSchema);
+export const Transfer = mongoose.model<ITransfer>("Transfer", TransferSchema);

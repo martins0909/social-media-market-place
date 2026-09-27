@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { apiFetch, catalogAPI, purchaseHistoryAPI, catalogCategoriesAPI, warmBackend } from "@/lib/api";
-import { Banknote, ChevronDown, History, Copy, Home, Menu, LogIn, FileText, Headphones, MessageCircle, Wallet, Eye, EyeOff, CreditCard, Zap, List, Check, User, Bell, ArrowRightLeft, Send, MoreHorizontal, LogOut, Plus, BadgeCheck, X, ShoppingCart, Minus, LayoutGrid, Moon, Sun, HelpCircle, Gift, Smartphone } from "lucide-react";
+import { Banknote, ChevronDown, History, Copy, Home, Menu, LogIn, FileText, Headphones, MessageCircle, Wallet, Eye, EyeOff, CreditCard, Zap, List, Check, User, Bell, ArrowRightLeft, Send, MoreHorizontal, LogOut, Plus, BadgeCheck, X, ShoppingCart, Minus, LayoutGrid, Moon, Sun, HelpCircle, Gift, Smartphone, Loader2 } from "lucide-react";
 import bannerImg from "@/assets/ban.jpg";
 import bannerLog1 from "@/assets/bannerlog1.jpg";
 import bannerLog2 from "@/assets/bannerlog2.jpg";
@@ -167,6 +167,10 @@ const Shop = () => {
   const [showConvertDialog, setShowConvertDialog] = useState(false);
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
   const [showBuyNumbers, setShowBuyNumbers] = useState(false);
+  const [showTransferDialog, setShowTransferDialog] = useState(false);
+  const [transferEmail, setTransferEmail] = useState("");
+  const [transferAmount, setTransferAmount] = useState("");
+  const [transferLoading, setTransferLoading] = useState(false);
   const [showQuickPayDetailsDialog, setShowQuickPayDetailsDialog] = useState(false);
   const [quickPayDetails, setQuickPayDetails] = useState<{
     accountName?: string;
@@ -536,6 +540,42 @@ const Shop = () => {
       }
     } finally {
       setIsPurchasing(false);
+    }
+  };
+
+  const handleTransfer = async () => {
+    if (!user) {
+      toast.error("Please sign in to transfer");
+      return;
+    }
+    const amount = parseFloat(transferAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast.error("Please enter a valid amount");
+      return;
+    }
+    if (!transferEmail.trim()) {
+      toast.error("Please enter recipient email");
+      return;
+    }
+    setTransferLoading(true);
+    try {
+      const res = await apiFetch("/api/transfer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ senderId: user.id, recipientEmail: transferEmail.trim(), amount }),
+      }) as { ok: boolean; newBalance: number; recipientEmail: string };
+      if (res.ok) {
+        toast.success(`₦${amount.toLocaleString()} sent to ${res.recipientEmail}`);
+        setUser((prev) => (prev ? { ...prev, balance: res.newBalance } : prev));
+        localStorage.setItem("currentUser", JSON.stringify({ ...user, balance: res.newBalance }));
+        setTransferEmail("");
+        setTransferAmount("");
+        setShowTransferDialog(false);
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Transfer failed");
+    } finally {
+      setTransferLoading(false);
     }
   };
 
@@ -1523,7 +1563,7 @@ const Shop = () => {
                 </button>
 
                 <button
-                  onClick={() => toast.info("Coming soon")}
+                  onClick={() => setShowTransferDialog(true)}
                   className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors"
                 >
                   <div className="w-12 h-12 rounded-full bg-rose-500 flex items-center justify-center text-white shadow-lg">
@@ -2682,6 +2722,58 @@ const Shop = () => {
             </div>
             <Button onClick={() => setShowConvertDialog(false)} className="w-full h-11 rounded-xl bg-[#7c3aed] hover:bg-[#6d28d9] text-white font-bold">
               Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Transfer Money Dialog */}
+      <Dialog open={showTransferDialog} onOpenChange={setShowTransferDialog}>
+        <DialogContent className="sm:max-w-md w-[90%] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+              <Send className="h-5 w-5 text-rose-500" />
+              Send Money
+            </DialogTitle>
+            <DialogDescription>
+              Transfer money to another user by email
+            </DialogDescription>
+          </DialogHeader>
+          <div className="p-2 space-y-4">
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-rose-500 to-pink-500 text-white">
+              <p className="text-sm text-white/80 mb-1">Available balance</p>
+              <p className="text-3xl font-black">₦{Math.max(0, user?.balance || 0).toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Recipient email</label>
+              <Input
+                type="email"
+                placeholder="user@example.com"
+                value={transferEmail}
+                onChange={(e) => setTransferEmail(e.target.value)}
+                className="h-12 rounded-xl bg-white dark:bg-[#101820] border-gray-200 dark:border-gray-800"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Amount (₦)</label>
+              <Input
+                type="number"
+                placeholder="Enter amount"
+                value={transferAmount}
+                onChange={(e) => setTransferAmount(e.target.value)}
+                className="h-12 rounded-xl bg-white dark:bg-[#101820] border-gray-200 dark:border-gray-800"
+              />
+            </div>
+            <Button
+              onClick={handleTransfer}
+              disabled={transferLoading}
+              className="w-full h-12 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold"
+            >
+              {transferLoading ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <>Send Money <Send className="ml-2 h-4 w-4" /></>
+              )}
             </Button>
           </div>
         </DialogContent>

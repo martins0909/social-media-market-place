@@ -8,7 +8,7 @@ import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 import crypto from "crypto";
 import axios from "axios";
-import { User, Admin, Cart, Payment, Product, CatalogProduct, PurchaseHistory, CatalogCategory, ReferralBonus, NumberActivation, NumberRental, NumberTransaction, Settings } from "./models";
+import { User, Admin, Cart, Payment, Product, CatalogProduct, PurchaseHistory, CatalogCategory, ReferralBonus, NumberActivation, NumberRental, NumberTransaction, Settings, Transfer } from "./models";
 import paymentsRouter from "./routes/payments";
 
 const app = express();
@@ -359,6 +359,78 @@ app.post("/api/auth/login", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("Login error:", err);
     res.status(500).json({ error: "Failed to login" });
+  }
+});
+
+// Transfer money between users
+app.post("/api/transfer", async (req: Request, res: Response) => {
+  const session = await mongoose.startSession();
+  try {
+    const { senderId, recipientEmail, amount } = req.body as { senderId?: string; recipientEmail?: string; amount?: number };
+    if (!senderId || !recipientEmail || !amount || amount <= 0) {
+      return res.status(400).json({ error: "senderId, recipientEmail and a positive amount are required" });
+    }
+
+    const normalizedRecipientEmail = recipientEmail.trim().toLowerCase();
+    const sender = await User.findById(senderId).exec();
+    if (!sender) return res.status(404).json({ error: "Sender not found" });
+
+    const recipient = await User.findOne({ email: normalizedRecipientEmail }).exec();
+    if (!recipient) return res.status(404).json({ error: "Recipient not found" });
+
+    if (sender._id.toString() === recipient._id.toString()) {
+      return res.status(400).json({ error: "Cannot transfer to yourself" });
+    }
+
+    if ((sender.balance || 0) < amount) {
+      return res.status(400).json({ error: "Insufficient balance" });
+    }
+
+    let newBalance = 0;
+    await session.withTransaction(async () => {
+      const updatedSender = await User.findByIdAndUpdate(
+        sender._id,
+        { $inc: { balance: -amount } },
+        { new: true, session }
+      ).exec();
+      await User.updateOne(
+        { _id: recipient._id },
+        { $inc: { balance: amount } },
+        { session }
+      ).exec();
+
+      await new Transfer({
+        senderId: sender._id.toString(),
+        senderEmail: sender.email,
+        recipientId: recipient._id.toString(),
+        recipientEmail: recipient.email,
+        amount,
+        status: "completed",
+      }).save({ session });
+
+      newBalance = updatedSender?.balance || 0;
+    });
+
+    res.json({ ok: true, newBalance, recipientEmail: recipient.email });
+  } catch (err) {
+    console.error("Transfer error:", err);
+    res.status(500).json({ error: "Failed to process transfer" });
+  } finally {
+    session.endSession();
+  }
+});
+
+// Get transfer history for a user
+app.get("/api/transfers/:userId", async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const transfers = await Transfer.find({
+      $or: [{ senderId: userId }, { recipientId: userId }],
+    }).sort({ createdAt: -1 }).lean();
+    res.json(transfers);
+  } catch (err) {
+    console.error("Fetch transfers error:", err);
+    res.status(500).json({ error: "Failed to fetch transfers" });
   }
 });
 
