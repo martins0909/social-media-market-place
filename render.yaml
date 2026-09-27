@@ -41,6 +41,8 @@ services:
         sync: false
       - key: POCKETFI_BUSINESS_ID
         sync: false
+      - key: BLOOMSMS_API_KEY
+        sync: false
 
   - type: static
     name: social-media-marketplace-client

@@ -103,8 +103,8 @@ export default function BuyNumbers({ user, onClose, onBalanceChange }: BuyNumber
       if (res?.status === "success" && Array.isArray(res.data?.countries)) {
         setCountries(res.data.countries);
       }
-    } catch (e) {
-      toast.error("Failed to load countries");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to load countries");
     } finally {
       setLoading(false);
     }
@@ -117,8 +117,8 @@ export default function BuyNumbers({ user, onClose, onBalanceChange }: BuyNumber
       if (res?.status === "success" && Array.isArray(res.data?.services)) {
         setServices(res.data.services);
       }
-    } catch (e) {
-      toast.error("Failed to load services");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to load services");
     } finally {
       setLoading(false);
     }
