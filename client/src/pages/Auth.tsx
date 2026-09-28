@@ -15,6 +15,7 @@ const Auth = () => {
   const navigate = useNavigate();
   const [signInEmail, setSignInEmail] = useState("");
   const [signInPassword, setSignInPassword] = useState("");
+  const [signUpName, setSignUpName] = useState("");
   const [signUpEmail, setSignUpEmail] = useState("");
   const [signUpPassword, setSignUpPassword] = useState("");
   const [signUpConfirmPassword, setSignUpConfirmPassword] = useState("");
@@ -115,7 +116,7 @@ const Auth = () => {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!signUpEmail || !signUpPassword || !signUpConfirmPassword) {
+    if (!signUpName || !signUpEmail || !signUpPassword || !signUpConfirmPassword) {
       toast.error("Please fill in all fields");
       return;
     }
@@ -141,7 +142,7 @@ const Auth = () => {
       const data = await apiFetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: signUpEmail, password: signUpPassword, referralCode }),
+        body: JSON.stringify({ email: signUpEmail, password: signUpPassword, name: signUpName, referralCode }),
       }) as { ok: boolean; user: { id: string; email: string; name?: string; balance: number; referralCode?: string } };
 
       localStorage.setItem("currentUser", JSON.stringify(data.user));
@@ -392,8 +393,26 @@ const Auth = () => {
               <CardContent className="relative">
                 <form onSubmit={handleSignUp} className="space-y-5">
                   <div className="space-y-2">
-                    <label htmlFor="signup-email" className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                    <label htmlFor="signup-name" className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
                       <User className="w-4 h-4 text-[#1565C0]" />
+                      Full Name
+                    </label>
+                    <div className="relative group">
+                      <Input
+                        id="signup-name"
+                        type="text"
+                        placeholder="John Doe"
+                        value={signUpName}
+                        onChange={(e) => setSignUpName(e.target.value)}
+                        required
+                        className="pl-11 h-12 border-2 border-gray-200 focus:border-[#1565C0] transition-all duration-300 rounded-xl bg-white/80 backdrop-blur-sm dark:border-gray-700 dark:bg-[#09090b]/80 dark:text-gray-100 dark:placeholder:text-gray-500"
+                      />
+                      <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-[#1565C0] transition-colors" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="signup-email" className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                      <Mail className="w-4 h-4 text-[#1565C0]" />
                       Email
                     </label>
                     <div className="relative group">
@@ -406,7 +425,7 @@ const Auth = () => {
                         required
                         className="pl-11 h-12 border-2 border-gray-200 focus:border-[#1565C0] transition-all duration-300 rounded-xl bg-white/80 backdrop-blur-sm dark:border-gray-700 dark:bg-[#09090b]/80 dark:text-gray-100 dark:placeholder:text-gray-500"
                       />
-                      <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-[#1565C0] transition-colors" />
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-[#1565C0] transition-colors" />
                     </div>
                   </div>
                   <div className="space-y-2">
