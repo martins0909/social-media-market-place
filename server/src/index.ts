@@ -1865,36 +1865,122 @@ async function daisyRequest(action: string, params: Record<string, string | numb
 // Proxy: DaisySMS services/prices
 app.get("/api/numbers/daisy/services", async (req: Request, res: Response) => {
   try {
-    const text = await daisyRequest("getPricesVerification");
-    console.log("DaisySMS services raw response:", text.substring(0, 500));
-    if (!text || text.startsWith("BAD_KEY") || text.startsWith("NO") || text.startsWith("ERROR")) {
-      return res.status(502).json({ error: "DaisySMS returned an error", details: text });
+    if (!DAISYSMS_API_KEY) {
+      return res.status(503).json({ error: "DaisySMS API key is not configured" });
     }
+
     const settings = await ensureSettings();
-    let data: any = {};
-    try {
-      data = JSON.parse(text);
-    } catch {
-      return res.status(502).json({ error: "Invalid response from DaisySMS", details: text });
-    }
-    // Attach NGN prices to each service/country entry
-    if (data && typeof data === "object") {
-      Object.keys(data).forEach((service) => {
-        const countries = data[service];
-        if (countries && typeof countries === "object") {
-          Object.keys(countries).forEach((country) => {
-            const entry = countries[country];
-            if (entry && typeof entry === "object" && entry.cost !== undefined) {
-              entry.priceNgn = calculateNgnPrice(Number(entry.cost), settings.exchangeRate, settings.markupPercentage);
-            }
+
+    // Helper to normalize any sms-activate prices response into service => country => entry
+    const normalizePrices = (raw: any): Record<string, Record<string, any>> => {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+      const result: Record<string, Record<string, any>> = {};
+
+      Object.keys(raw).forEach((key) => {
+        const value = raw[key];
+        if (!value || typeof value !== "object") return;
+
+        // Detect format by looking at first nested value
+        const nestedKeys = Object.keys(value);
+        if (nestedKeys.length === 0) return;
+        const firstNested = value[nestedKeys[0]];
+        const isServiceFirst = firstNested && typeof firstNested === "object" && (firstNested.cost !== undefined || firstNested.price !== undefined || firstNested.count !== undefined || firstNested.retail_price !== undefined);
+
+        if (isServiceFirst) {
+          // getPricesVerification format: service => country => data
+          result[key] = value;
+        } else {
+          // getPrices format: country => service => data
+          const country = key;
+          Object.keys(value).forEach((serviceCode) => {
+            if (!result[serviceCode]) result[serviceCode] = {};
+            result[serviceCode][country] = value[serviceCode];
           });
         }
       });
+
+      return result;
+    };
+
+    const attachNgnPrices = (data: Record<string, Record<string, any>>) => {
+      Object.keys(data).forEach((service) => {
+        const countries = data[service];
+        if (!countries || typeof countries !== "object") return;
+        Object.keys(countries).forEach((country) => {
+          const entry = countries[country];
+          if (!entry || typeof entry !== "object") return;
+          const cost = Number(entry.cost ?? entry.price ?? entry.retail_price ?? 0);
+          if (cost > 0) {
+            entry.cost = cost;
+            entry.priceNgn = calculateNgnPrice(cost, settings.exchangeRate, settings.markupPercentage);
+          }
+        });
+      });
+    };
+
+    // Try getPricesVerification first
+    let text = await daisyRequest("getPricesVerification");
+    console.log("DaisySMS getPricesVerification raw:", text.substring(0, 1000));
+
+    if (!text || text.startsWith("BAD_KEY") || text.startsWith("NO") || text.startsWith("ERROR") || text.startsWith("ACCESS")) {
+      // Try getPrices as fallback
+      console.log("DaisySMS: getPricesVerification failed/empty, trying getPrices");
+      text = await daisyRequest("getPrices");
+      console.log("DaisySMS getPrices raw:", text.substring(0, 1000));
     }
-    res.json({ status: "success", data });
+
+    if (!text || text.startsWith("BAD_KEY")) {
+      return res.status(502).json({ error: "DaisySMS API key is invalid", details: text });
+    }
+    if (text.startsWith("NO") || text.startsWith("ERROR")) {
+      return res.status(502).json({ error: "DaisySMS returned an error", details: text });
+    }
+
+    let parsed: any = {};
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return res.status(502).json({ error: "Invalid JSON response from DaisySMS", details: text });
+    }
+
+    const normalized = normalizePrices(parsed);
+    attachNgnPrices(normalized);
+
+    // Count total services for debugging
+    let totalEntries = 0;
+    Object.keys(normalized).forEach((s) => {
+      totalEntries += Object.keys(normalized[s]).length;
+    });
+    console.log("DaisySMS normalized services:", Object.keys(normalized).length, "services,", totalEntries, "entries");
+
+    res.json({ status: "success", data: normalized });
   } catch (err: any) {
     console.error("DaisySMS services error:", err.response?.data || err.message);
     res.status(502).json({ error: "Failed to fetch DaisySMS services", details: err.response?.data || err.message });
+  }
+});
+
+// Debug: test DaisySMS API key and show raw responses
+app.get("/api/numbers/daisy/debug", async (req: Request, res: Response) => {
+  try {
+    if (!DAISYSMS_API_KEY) {
+      return res.status(503).json({ error: "DaisySMS API key is not configured" });
+    }
+    const [balance, verification, prices] = await Promise.all([
+      daisyRequest("getBalance").catch((e) => String(e.message)),
+      daisyRequest("getPricesVerification").catch((e) => String(e.message)),
+      daisyRequest("getPrices").catch((e) => String(e.message)),
+    ]);
+    res.json({
+      apiKeyConfigured: true,
+      apiKeyPrefix: DAISYSMS_API_KEY.substring(0, 8) + "...",
+      balance,
+      getPricesVerification: verification,
+      getPrices: prices,
+    });
+  } catch (err: any) {
+    console.error("DaisySMS debug error:", err);
+    res.status(500).json({ error: "Debug failed", details: err.message });
   }
 });
 
