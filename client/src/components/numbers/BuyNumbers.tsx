@@ -148,7 +148,7 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
                 countryMap.set(countryId, `Country ${countryId}`);
                 mapped.push({
                   code: serviceCode,
-                  name: serviceCode.toUpperCase(),
+                  name: serviceCode.replace(/_/g, " ").replace(/\b\w/g, (l: string) => l.toUpperCase()),
                   price: String(entry.cost || 0),
                   priceNgn: entry.priceNgn || Math.ceil(Number(entry.cost || 0) * 1500),
                   stock: entry.count || 0,
@@ -363,29 +363,43 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      {isBloom ? (
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => setView("us")}
+            className="flex flex-col items-start gap-3 rounded-2xl p-4 text-white shadow-lg active:scale-[0.98] transition-transform bg-gradient-to-br from-blue-500 to-blue-600"
+          >
+            <span className="text-3xl">🇺🇸</span>
+            <div className="text-left">
+              <div className="font-bold">US Numbers</div>
+              <div className="text-xs text-white/80">Virtual SMS numbers</div>
+            </div>
+          </button>
+
+          <button
+            onClick={() => { setSearch(""); setView("international"); }}
+            className="flex flex-col items-start gap-3 rounded-2xl p-4 text-white shadow-lg active:scale-[0.98] transition-transform bg-gradient-to-br from-emerald-500 to-emerald-600"
+          >
+            <Globe className="h-8 w-8" />
+            <div className="text-left">
+              <div className="font-bold">International</div>
+              <div className="text-xs text-white/80">160+ countries</div>
+            </div>
+          </button>
+        </div>
+      ) : (
         <button
           onClick={() => setView("us")}
-          className={`flex flex-col items-start gap-3 rounded-2xl p-4 text-white shadow-lg active:scale-[0.98] transition-transform ${isBloom ? "bg-gradient-to-br from-blue-500 to-blue-600" : "bg-gradient-to-br from-pink-500 to-pink-600"}`}
+          className="w-full flex items-center gap-4 rounded-2xl p-5 text-white shadow-lg active:scale-[0.98] transition-transform bg-gradient-to-r from-pink-500 to-pink-600"
         >
-          <span className="text-3xl">🇺🇸</span>
+          <span className="text-4xl">🇺🇸</span>
           <div className="text-left">
-            <div className="font-bold">US Numbers</div>
-            <div className="text-xs text-white/80">Virtual SMS numbers</div>
+            <div className="font-bold text-lg">Browse USA Services</div>
+            <div className="text-xs text-white/80">All available SMS verification services</div>
           </div>
+          <ChevronRight className="h-6 w-6 ml-auto" />
         </button>
-
-        <button
-          onClick={() => { setSearch(""); setView("international"); }}
-          className={`flex flex-col items-start gap-3 rounded-2xl p-4 text-white shadow-lg active:scale-[0.98] transition-transform ${isBloom ? "bg-gradient-to-br from-emerald-500 to-emerald-600" : "bg-gradient-to-br from-purple-500 to-purple-600"}`}
-        >
-          <Globe className="h-8 w-8" />
-          <div className="text-left">
-            <div className="font-bold">International</div>
-            <div className="text-xs text-white/80">{isBloom ? "160+ countries" : "All countries"}</div>
-          </div>
-        </button>
-      </div>
+      )}
 
       {renderMenuList()}
     </div>
@@ -476,7 +490,7 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
                 <div>
                   <div className="font-semibold text-gray-900 dark:text-white text-sm">{s.name}</div>
                   <div className="text-xs text-gray-500">
-                    {s.stock?.toLocaleString()} pcs{s.countryId ? ` · Country ${s.countryId}` : ""}
+                    {s.stock?.toLocaleString()} pcs{s.countryId && s.countryId !== "187" ? ` · Country ${s.countryId}` : ""}
                   </div>
                 </div>
               </div>
@@ -558,7 +572,7 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
 
   const renderMyNumbers = () => (
     <div className="animate-in fade-in duration-300">
-      {renderHeader("My Numbers", isBloom ? "home" : "services")}
+      {renderHeader("My Numbers", "home")}
       <div className="space-y-3 pb-20">
         {activations.map((a) => (
           <div key={a._id || a.activationId} className="rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-4">
@@ -614,7 +628,7 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
 
   const renderHistory = () => (
     <div className="animate-in fade-in duration-300">
-      {renderHeader("Purchase History", isBloom ? "home" : "services")}
+      {renderHeader("Purchase History", "home")}
       <div className="space-y-2 pb-20">
         {transactions.map((t) => (
           <div key={t._id || t.reference} className="flex items-center justify-between rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-3">
@@ -642,7 +656,7 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
 
   const renderRentals = () => (
     <div className="animate-in fade-in duration-300">
-      {renderHeader("Rentals", isBloom ? "home" : "services")}
+      {renderHeader("Rentals", "home")}
       <div className="space-y-3 pb-20">
         {rentals.map((r) => (
           <div key={r._id || r.rentalId} className="rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-4">

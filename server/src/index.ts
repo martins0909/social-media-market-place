@@ -1880,11 +1880,27 @@ app.get("/api/numbers/daisy/services", async (req: Request, res: Response) => {
         const value = raw[key];
         if (!value || typeof value !== "object") return;
 
-        // Detect format by looking at first nested value
+        // Check if this is a flat service => {cost, count} entry (DaisySMS actual format)
+        const isFlatServiceEntry =
+          value.cost !== undefined ||
+          value.price !== undefined ||
+          value.retail_price !== undefined ||
+          (value.count !== undefined && typeof value.count === "number");
+
+        if (isFlatServiceEntry) {
+          // DaisySMS flat format: service => {cost, count, multi}
+          result[key] = { "187": value };
+          return;
+        }
+
+        // Otherwise it's a nested object; detect format by looking at first nested value
         const nestedKeys = Object.keys(value);
         if (nestedKeys.length === 0) return;
         const firstNested = value[nestedKeys[0]];
-        const isServiceFirst = firstNested && typeof firstNested === "object" && (firstNested.cost !== undefined || firstNested.price !== undefined || firstNested.count !== undefined || firstNested.retail_price !== undefined);
+        const isServiceFirst =
+          firstNested &&
+          typeof firstNested === "object" &&
+          (firstNested.cost !== undefined || firstNested.price !== undefined || firstNested.count !== undefined || firstNested.retail_price !== undefined);
 
         if (isServiceFirst) {
           // getPricesVerification format: service => country => data
