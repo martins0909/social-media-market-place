@@ -10,10 +10,7 @@ import {
   Flag,
   Smartphone,
   Clock,
-  RefreshCw,
   Copy,
-  Check,
-  ShoppingCart,
   History,
   Calendar,
   X,
@@ -23,11 +20,14 @@ import {
 
 interface BuyNumbersProps {
   user: { id: string; email: string; balance: number } | null;
+  provider: "bloom" | "daisy";
   onClose: () => void;
   onBalanceChange?: (balance: number) => void;
 }
 
-type View = "home" | "us" | "international" | "country" | "my-numbers" | "history" | "rentals";
+type BloomView = "home" | "us" | "international" | "country" | "my-numbers" | "history" | "rentals";
+type DaisyView = "services" | "my-numbers" | "history";
+type View = BloomView | DaisyView;
 
 interface Country {
   id: string;
@@ -44,6 +44,7 @@ interface Service {
 
 interface Activation {
   _id?: string;
+  provider: "bloom" | "daisy";
   activationId: string;
   phoneNumber: string;
   serviceName?: string;
@@ -58,6 +59,7 @@ interface Activation {
 
 interface Rental {
   _id?: string;
+  provider: "bloom" | "daisy";
   rentalId: string;
   phoneNumber: string;
   serviceName?: string;
@@ -71,6 +73,7 @@ interface Rental {
 
 interface NumberTransaction {
   _id?: string;
+  provider: "bloom" | "daisy";
   reference: string;
   amount: number;
   type: "activation" | "rental" | "refund";
@@ -79,10 +82,11 @@ interface NumberTransaction {
   createdAt: string;
 }
 
-const DEFAULT_COUNTRY = "187"; // USA in BloomSMS
+const DEFAULT_COUNTRY = "187"; // USA
 
-export default function BuyNumbers({ user, onClose, onBalanceChange }: BuyNumbersProps) {
-  const [view, setView] = useState<View>("home");
+export default function BuyNumbers({ user, provider, onClose, onBalanceChange }: BuyNumbersProps) {
+  const isBloom = provider === "bloom";
+  const [view, setView] = useState<View>(isBloom ? "home" : "services");
   const [selectedCountry, setSelectedCountry] = useState<Country | null>(null);
   const [countries, setCountries] = useState<Country[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -96,7 +100,7 @@ export default function BuyNumbers({ user, onClose, onBalanceChange }: BuyNumber
 
   const isLoggedIn = !!user?.id;
 
-  const fetchCountries = async () => {
+  const fetchBloomCountries = async () => {
     try {
       setLoading(true);
       const res = await apiFetch("/api/numbers/countries");
@@ -110,7 +114,7 @@ export default function BuyNumbers({ user, onClose, onBalanceChange }: BuyNumber
     }
   };
 
-  const fetchServices = async (countryId: string) => {
+  const fetchBloomServices = async (countryId: string) => {
     try {
       setLoading(true);
       const res = await apiFetch(`/api/numbers/services?country=${countryId}`);
@@ -124,13 +128,47 @@ export default function BuyNumbers({ user, onClose, onBalanceChange }: BuyNumber
     }
   };
 
+  const fetchDaisyServices = async () => {
+    try {
+      setLoading(true);
+      const res = await apiFetch("/api/numbers/daisy/services");
+      const data = res?.data;
+      const mapped: Service[] = [];
+      if (data && typeof data === "object") {
+        Object.keys(data).forEach((serviceCode) => {
+          const countries = data[serviceCode];
+          if (countries && typeof countries === "object") {
+            Object.keys(countries).forEach((countryId) => {
+              if (countryId !== DEFAULT_COUNTRY) return; // DaisySMS USA only for this flow
+              const entry = countries[countryId];
+              if (entry && typeof entry === "object") {
+                mapped.push({
+                  code: serviceCode,
+                  name: serviceCode.toUpperCase(),
+                  price: String(entry.cost || 0),
+                  priceNgn: entry.priceNgn || Math.ceil(Number(entry.cost || 0) * 1500),
+                  stock: entry.count || 0,
+                });
+              }
+            });
+          }
+        });
+      }
+      setServices(mapped);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to load DaisySMS services");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const fetchUserData = async () => {
     if (!user?.id) return;
     try {
       const [acts, rnts, txs] = await Promise.all([
-        apiFetch(`/api/numbers/activations/${user.id}`),
+        apiFetch(`/api/numbers/activations/${user.id}?provider=${provider}`),
         apiFetch(`/api/numbers/rentals/${user.id}`),
-        apiFetch(`/api/numbers/transactions/${user.id}`),
+        apiFetch(`/api/numbers/transactions/${user.id}?provider=${provider}`),
       ]);
       setActivations(acts || []);
       setRentals(rnts || []);
@@ -141,7 +179,7 @@ export default function BuyNumbers({ user, onClose, onBalanceChange }: BuyNumber
   };
 
   useEffect(() => {
-    fetchCountries();
+    if (isBloom) fetchBloomCountries();
     fetchUserData();
     return () => {
       if (pollTimer.current) clearInterval(pollTimer.current);
@@ -149,16 +187,35 @@ export default function BuyNumbers({ user, onClose, onBalanceChange }: BuyNumber
   }, []);
 
   useEffect(() => {
-    if (view === "us") fetchServices(DEFAULT_COUNTRY);
-    if (view === "country" && selectedCountry) fetchServices(selectedCountry.id);
-  }, [view, selectedCountry]);
+    if (!isBloom) {
+      fetchDaisyServices();
+      return;
+    }
+    if (view === "us") fetchBloomServices(DEFAULT_COUNTRY);
+    if (view === "country" && selectedCountry) fetchBloomServices(selectedCountry.id);
+  }, [view, selectedCountry, provider]);
 
   useEffect(() => {
     if (pollingId) {
       pollTimer.current = setInterval(async () => {
         try {
-          const res = await apiFetch(`/api/numbers/activations/status/${pollingId}`);
-          const local = res?.local;
+          let local;
+          if (isBloom) {
+            const res = await apiFetch(`/api/numbers/activations/status/${pollingId}`);
+            local = res?.local;
+          } else {
+            const res = await apiFetch(`/api/numbers/daisy/activations/status/${pollingId}`);
+            const text = res?.data;
+            if (text && text.startsWith("STATUS_OK")) {
+              const code = text.split(":")[1];
+              local = { smsCode: code };
+              setActivations((prev) =>
+                prev.map((a) =>
+                  a.activationId === pollingId ? { ...a, smsCode: code, status: "code_received" } : a
+                )
+              );
+            }
+          }
           if (local?.smsCode) {
             toast.success(`Code received: ${local.smsCode}`);
             setPollingId(null);
@@ -172,33 +229,47 @@ export default function BuyNumbers({ user, onClose, onBalanceChange }: BuyNumber
         if (pollTimer.current) clearInterval(pollTimer.current);
       };
     }
-  }, [pollingId]);
+  }, [pollingId, isBloom]);
 
   const handleRent = async (service: Service) => {
     if (!isLoggedIn) {
       toast.error("Please sign in to rent a number");
       return;
     }
-    const countryId = view === "us" ? DEFAULT_COUNTRY : selectedCountry?.id || DEFAULT_COUNTRY;
-    const countryName = view === "us" ? "United States" : selectedCountry?.name || "";
     try {
       setLoading(true);
-      const res = await apiFetch("/api/numbers/activations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: user!.id,
-          service: service.code,
-          country: countryId,
-          serviceName: service.name,
-          countryName,
-        }),
-      });
+      let res: any;
+      if (isBloom) {
+        const countryId = view === "us" ? DEFAULT_COUNTRY : selectedCountry?.id || DEFAULT_COUNTRY;
+        const countryName = view === "us" ? "United States" : selectedCountry?.name || "";
+        res = await apiFetch("/api/numbers/activations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: user!.id,
+            service: service.code,
+            country: countryId,
+            serviceName: service.name,
+            countryName,
+          }),
+        });
+      } else {
+        res = await apiFetch("/api/numbers/daisy/activations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: user!.id,
+            service: service.code,
+            serviceName: service.name,
+          }),
+        });
+      }
       if (res.ok && res.activation) {
         toast.success(`Number rented: ${res.activation.phoneNumber}`);
         setActivations((prev) => [res.activation, ...prev]);
         setTransactions((prev) => [
           {
+            provider,
             reference: `TXN_${Date.now()}`,
             amount: res.activation.priceNgn,
             type: "activation",
@@ -220,7 +291,7 @@ export default function BuyNumbers({ user, onClose, onBalanceChange }: BuyNumber
   };
 
   const filteredServices = services.filter((s) =>
-    s.name.toLowerCase().includes(search.toLowerCase())
+    s.name.toLowerCase().includes(search.toLowerCase()) || s.code.toLowerCase().includes(search.toLowerCase())
   );
 
   const filteredCountries = countries.filter((c) =>
@@ -235,7 +306,7 @@ export default function BuyNumbers({ user, onClose, onBalanceChange }: BuyNumber
   const formatDate = (d?: string) =>
     d ? new Date(d).toLocaleString() : "—";
 
-  const renderHeader = (title: string, backTo: View = "home") => (
+  const renderHeader = (title: string, backTo: View = isBloom ? "home" : "services") => (
     <div className="flex items-center gap-3 mb-4">
       <button
         onClick={() => setView(backTo)}
@@ -245,10 +316,13 @@ export default function BuyNumbers({ user, onClose, onBalanceChange }: BuyNumber
         <ArrowLeft className="h-5 w-5 text-gray-700 dark:text-gray-200" />
       </button>
       <h2 className="text-lg font-bold text-gray-900 dark:text-white">{title}</h2>
+      <span className={`ml-auto text-xs px-2 py-1 rounded-full font-bold uppercase ${provider === "bloom" ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300" : "bg-pink-100 text-pink-700 dark:bg-pink-900 dark:text-pink-300"}`}>
+        {provider}
+      </span>
     </div>
   );
 
-  const renderHome = () => (
+  const renderBloomHome = () => (
     <div className="space-y-4 animate-in fade-in duration-300">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-black text-gray-900 dark:text-white">Buy Numbers</h2>
@@ -285,55 +359,59 @@ export default function BuyNumbers({ user, onClose, onBalanceChange }: BuyNumber
         </button>
       </div>
 
-      <div className="space-y-2">
-        <button
-          onClick={() => setView("my-numbers")}
-          className="w-full flex items-center justify-between rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-4"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900 flex items-center justify-center">
-              <Smartphone className="h-5 w-5 text-purple-600 dark:text-purple-400" />
-            </div>
-            <div className="text-left">
-              <div className="font-semibold text-gray-900 dark:text-white">My Numbers</div>
-              <div className="text-xs text-gray-500">Active numbers & OTPs</div>
-            </div>
-          </div>
-          <ChevronRight className="h-5 w-5 text-gray-400" />
-        </button>
+      {renderMenuList()}
+    </div>
+  );
 
-        <button
-          onClick={() => setView("history")}
-          className="w-full flex items-center justify-between rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-4"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-              <History className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-            </div>
-            <div className="text-left">
-              <div className="font-semibold text-gray-900 dark:text-white">Purchase History</div>
-              <div className="text-xs text-gray-500">Past number orders</div>
-            </div>
+  const renderMenuList = () => (
+    <div className="space-y-2">
+      <button
+        onClick={() => setView("my-numbers")}
+        className="w-full flex items-center justify-between rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-4"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900 flex items-center justify-center">
+            <Smartphone className="h-5 w-5 text-purple-600 dark:text-purple-400" />
           </div>
-          <ChevronRight className="h-5 w-5 text-gray-400" />
-        </button>
+          <div className="text-left">
+            <div className="font-semibold text-gray-900 dark:text-white">My Numbers</div>
+            <div className="text-xs text-gray-500">Active numbers & OTPs</div>
+          </div>
+        </div>
+        <ChevronRight className="h-5 w-5 text-gray-400" />
+      </button>
 
-        <button
-          onClick={() => setView("rentals")}
-          className="w-full flex items-center justify-between rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-4"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900 flex items-center justify-center">
-              <Calendar className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-            </div>
-            <div className="text-left">
-              <div className="font-semibold text-gray-900 dark:text-white">Rentals</div>
-              <div className="text-xs text-gray-500">Long-term numbers</div>
-            </div>
+      <button
+        onClick={() => setView("history")}
+        className="w-full flex items-center justify-between rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-4"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
+            <History className="h-5 w-5 text-blue-600 dark:text-blue-400" />
           </div>
-          <ChevronRight className="h-5 w-5 text-gray-400" />
-        </button>
-      </div>
+          <div className="text-left">
+            <div className="font-semibold text-gray-900 dark:text-white">Purchase History</div>
+            <div className="text-xs text-gray-500">Past number orders</div>
+          </div>
+        </div>
+        <ChevronRight className="h-5 w-5 text-gray-400" />
+      </button>
+
+      <button
+        onClick={() => setView("rentals")}
+        className="w-full flex items-center justify-between rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-4"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900 flex items-center justify-center">
+            <Calendar className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+          </div>
+          <div className="text-left">
+            <div className="font-semibold text-gray-900 dark:text-white">Rentals</div>
+            <div className="text-xs text-gray-500">Long-term numbers</div>
+          </div>
+        </div>
+        <ChevronRight className="h-5 w-5 text-gray-400" />
+      </button>
     </div>
   );
 
@@ -445,23 +523,28 @@ export default function BuyNumbers({ user, onClose, onBalanceChange }: BuyNumber
 
   const renderMyNumbers = () => (
     <div className="animate-in fade-in duration-300">
-      {renderHeader("My Numbers", "home")}
+      {renderHeader("My Numbers")}
       <div className="space-y-3 pb-20">
         {activations.map((a) => (
           <div key={a._id || a.activationId} className="rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-4">
             <div className="flex items-center justify-between mb-2">
               <div className="font-bold text-gray-900 dark:text-white">{a.phoneNumber}</div>
-              <span
-                className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                  a.status === "code_received"
-                    ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
-                    : a.status === "waiting"
-                    ? "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
-                    : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                }`}
-              >
-                {a.status.replace("_", " ")}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${a.provider === "bloom" ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300" : "bg-pink-100 text-pink-700 dark:bg-pink-900 dark:text-pink-300"}`}>
+                  {a.provider}
+                </span>
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                    a.status === "code_received"
+                      ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
+                      : a.status === "waiting"
+                      ? "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
+                      : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                  }`}
+                >
+                  {a.status.replace("_", " ")}
+                </span>
+              </div>
             </div>
             <div className="text-xs text-gray-500 mb-3">{a.serviceName} · {a.countryName || ""} · Expires {formatDate(a.expiresAt)}</div>
             {a.smsCode ? (
@@ -496,12 +579,17 @@ export default function BuyNumbers({ user, onClose, onBalanceChange }: BuyNumber
 
   const renderHistory = () => (
     <div className="animate-in fade-in duration-300">
-      {renderHeader("Purchase History", "home")}
+      {renderHeader("Purchase History")}
       <div className="space-y-2 pb-20">
         {transactions.map((t) => (
           <div key={t._id || t.reference} className="flex items-center justify-between rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-3">
             <div>
-              <div className="font-semibold text-gray-900 dark:text-white text-sm capitalize">{t.type}</div>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-gray-900 dark:text-white text-sm capitalize">{t.type}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold uppercase ${t.provider === "bloom" ? "bg-blue-100 text-blue-700" : "bg-pink-100 text-pink-700"}`}>
+                  {t.provider}
+                </span>
+              </div>
               <div className="text-xs text-gray-500">{formatDate(t.createdAt)}</div>
             </div>
             <div className="text-right">
@@ -519,7 +607,7 @@ export default function BuyNumbers({ user, onClose, onBalanceChange }: BuyNumber
 
   const renderRentals = () => (
     <div className="animate-in fade-in duration-300">
-      {renderHeader("Rentals", "home")}
+      {renderHeader("Rentals")}
       <div className="space-y-3 pb-20">
         {rentals.map((r) => (
           <div key={r._id || r.rentalId} className="rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-4">
@@ -540,13 +628,71 @@ export default function BuyNumbers({ user, onClose, onBalanceChange }: BuyNumber
     </div>
   );
 
+  const renderDaisyServices = () => (
+    <div className="animate-in fade-in duration-300">
+      {renderHeader("USA Numbers (DaisySMS)")}
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Virtual USA numbers for SMS verification</p>
+      <div className="relative mb-4">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <Input
+          placeholder="Search services..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-9 bg-white dark:bg-[#101820] border-gray-200 dark:border-gray-800"
+        />
+      </div>
+      {loading ? (
+        <div className="flex justify-center py-10">
+          <Loader2 className="h-8 w-8 animate-spin text-[#1565C0]" />
+        </div>
+      ) : (
+        <div className="space-y-3 pb-20">
+          {filteredServices.map((s) => (
+            <div
+              key={s.code}
+              className="flex items-center justify-between rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-3"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-lg">
+                  {s.name.toLowerCase().includes("whatsapp") ? "💬" : s.name.toLowerCase().includes("telegram") ? "✈️" : "📱"}
+                </div>
+                <div>
+                  <div className="font-semibold text-gray-900 dark:text-white text-sm">{s.name}</div>
+                  <div className="text-xs text-gray-500">{s.stock?.toLocaleString()} pcs</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="text-right">
+                  <div className="text-sm font-bold text-[#1565C0]">₦{s.priceNgn.toLocaleString()}</div>
+                  <div className="text-[10px] text-gray-400">${s.price}</div>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => handleRent(s)}
+                  disabled={loading || !isLoggedIn}
+                  className="bg-pink-600 hover:bg-pink-700 text-white"
+                >
+                  Buy
+                </Button>
+              </div>
+            </div>
+          ))}
+          {filteredServices.length === 0 && !loading && (
+            <div className="text-center py-10 text-gray-500 dark:text-gray-400">No services found</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 z-40 bg-gray-50 dark:bg-black flex flex-col pt-[60px] pb-[80px]">
       <div className="flex-1 overflow-y-auto p-4">
-        {view === "home" && renderHome()}
-        {view === "us" && renderServiceList("US Numbers", "United States")}
-        {view === "international" && renderInternational()}
-        {view === "country" && selectedCountry && renderServiceList(selectedCountry.name, selectedCountry.name)}
+        {isBloom && view === "home" && renderBloomHome()}
+        {isBloom && view === "us" && renderServiceList("US Numbers", "United States")}
+        {isBloom && view === "international" && renderInternational()}
+        {isBloom && view === "country" && selectedCountry && renderServiceList(selectedCountry.name, selectedCountry.name)}
+        {!isBloom && view === "services" && renderDaisyServices()}
         {view === "my-numbers" && renderMyNumbers()}
         {view === "history" && renderHistory()}
         {view === "rentals" && renderRentals()}

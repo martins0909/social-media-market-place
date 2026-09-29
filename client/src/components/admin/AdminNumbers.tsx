@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
 type AdminNumbersView = "transactions" | "my-numbers" | "rentals" | "all-countries" | "usa" | "settings";
+type ProviderFilter = "all" | "bloom" | "daisy";
 
 interface Activation {
   _id?: string;
@@ -69,12 +70,23 @@ interface NumberSettings {
 
 export default function AdminNumbers() {
   const [view, setView] = useState<AdminNumbersView>("transactions");
+  const [providerFilter, setProviderFilter] = useState<ProviderFilter>("all");
   const [activations, setActivations] = useState<Activation[]>([]);
   const [rentals, setRentals] = useState<Rental[]>([]);
   const [transactions, setTransactions] = useState<NumberTransaction[]>([]);
   const [settings, setSettings] = useState<NumberSettings>({ markupPercentage: 0, exchangeRate: 1500 });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const ProviderBadge = ({ provider }: { provider: string }) => (
+    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${provider === "bloom" ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300" : "bg-pink-100 text-pink-700 dark:bg-pink-900 dark:text-pink-300"}`}>
+      {provider}
+    </span>
+  );
+
+  const filteredActivations = activations.filter((a) => providerFilter === "all" || a.provider === providerFilter);
+  const filteredRentals = rentals.filter((r) => providerFilter === "all" || r.provider === providerFilter);
+  const filteredTransactions = transactions.filter((t) => providerFilter === "all" || t.provider === providerFilter);
 
   const menuItems: { key: AdminNumbersView; label: string; icon: React.ElementType }[] = [
     { key: "transactions", label: "Transaction History", icon: CreditCard },
@@ -146,6 +158,7 @@ export default function AdminNumbers() {
       <table className="w-full text-sm">
         <thead className="bg-gray-100 dark:bg-gray-900">
           <tr>
+            <th className="text-left p-3 font-semibold">Provider</th>
             <th className="text-left p-3 font-semibold">Reference</th>
             <th className="text-left p-3 font-semibold">Amount</th>
             <th className="text-left p-3 font-semibold">Type</th>
@@ -154,8 +167,9 @@ export default function AdminNumbers() {
           </tr>
         </thead>
         <tbody>
-          {transactions.map((t) => (
+          {filteredTransactions.map((t) => (
             <tr key={t._id || t.reference} className="border-b border-gray-100 dark:border-gray-800">
+              <td className="p-3"><ProviderBadge provider={t.provider} /></td>
               <td className="p-3 font-mono">{t.reference}</td>
               <td className="p-3">₦{t.amount.toLocaleString()}</td>
               <td className="p-3 capitalize">{t.type}</td>
@@ -163,8 +177,8 @@ export default function AdminNumbers() {
               <td className="p-3">{formatDate(t.createdAt)}</td>
             </tr>
           ))}
-          {transactions.length === 0 && (
-            <tr><td colSpan={5} className="p-6 text-center text-gray-500">No transactions yet</td></tr>
+          {filteredTransactions.length === 0 && (
+            <tr><td colSpan={6} className="p-6 text-center text-gray-500">No transactions yet</td></tr>
           )}
         </tbody>
       </table>
@@ -176,6 +190,7 @@ export default function AdminNumbers() {
       <table className="w-full text-sm">
         <thead className="bg-gray-100 dark:bg-gray-900">
           <tr>
+            <th className="text-left p-3 font-semibold">Provider</th>
             <th className="text-left p-3 font-semibold">Service</th>
             <th className="text-left p-3 font-semibold">Number</th>
             <th className="text-left p-3 font-semibold">OTP Code</th>
@@ -186,6 +201,7 @@ export default function AdminNumbers() {
         <tbody>
           {data.map((a) => (
             <tr key={a._id || a.activationId} className="border-b border-gray-100 dark:border-gray-800">
+              <td className="p-3"><ProviderBadge provider={a.provider} /></td>
               <td className="p-3">{a.serviceName || a.activationId}</td>
               <td className="p-3 font-mono">{a.phoneNumber}</td>
               <td className="p-3">
@@ -212,7 +228,7 @@ export default function AdminNumbers() {
             </tr>
           ))}
           {data.length === 0 && (
-            <tr><td colSpan={5} className="p-6 text-center text-gray-500">No numbers found</td></tr>
+            <tr><td colSpan={6} className="p-6 text-center text-gray-500">No numbers found</td></tr>
           )}
         </tbody>
       </table>
@@ -224,6 +240,7 @@ export default function AdminNumbers() {
       <table className="w-full text-sm">
         <thead className="bg-gray-100 dark:bg-gray-900">
           <tr>
+            <th className="text-left p-3 font-semibold">Provider</th>
             <th className="text-left p-3 font-semibold">Service</th>
             <th className="text-left p-3 font-semibold">Number</th>
             <th className="text-left p-3 font-semibold">Expires At</th>
@@ -232,8 +249,9 @@ export default function AdminNumbers() {
           </tr>
         </thead>
         <tbody>
-          {rentals.map((r) => (
+          {filteredRentals.map((r) => (
             <tr key={r._id || r.rentalId} className="border-b border-gray-100 dark:border-gray-800">
+              <td className="p-3"><ProviderBadge provider={r.provider} /></td>
               <td className="p-3">{r.serviceName || r.rentalId}</td>
               <td className="p-3 font-mono">{r.phoneNumber}</td>
               <td className="p-3">{formatDate(r.expiresAt)}</td>
@@ -248,8 +266,8 @@ export default function AdminNumbers() {
               </td>
             </tr>
           ))}
-          {rentals.length === 0 && (
-            <tr><td colSpan={5} className="p-6 text-center text-gray-500">No rentals found</td></tr>
+          {filteredRentals.length === 0 && (
+            <tr><td colSpan={6} className="p-6 text-center text-gray-500">No rentals found</td></tr>
           )}
         </tbody>
       </table>
@@ -283,10 +301,10 @@ export default function AdminNumbers() {
 
   const viewData: Record<AdminNumbersView, { title: string; content: React.ReactNode }> = {
     transactions: { title: "Transaction History", content: renderTransactions() },
-    "my-numbers": { title: "My Numbers", content: renderActivationsTable(activations) },
+    "my-numbers": { title: "My Numbers", content: renderActivationsTable(filteredActivations) },
     rentals: { title: "Rentals", content: renderRentals() },
-    "all-countries": { title: "All Countries", content: renderActivationsTable(activations) },
-    usa: { title: "USA Numbers", content: renderActivationsTable(activations.filter((a) => a.country === "187")) },
+    "all-countries": { title: "All Countries", content: renderActivationsTable(filteredActivations) },
+    usa: { title: "USA Numbers", content: renderActivationsTable(filteredActivations.filter((a) => a.country === "187")) },
     settings: { title: "Markup Settings", content: renderSettings() },
   };
 
@@ -317,15 +335,38 @@ export default function AdminNumbers() {
 
       {/* Content */}
       <div className="flex-1 bg-white dark:bg-[#101820] rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <h2 className="text-lg font-bold text-gray-900 dark:text-white">{viewData[view].title}</h2>
-          <button
-            onClick={fetchData}
-            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-            aria-label="Refresh"
-          >
-            <RefreshCw className="h-4 w-4 text-gray-600 dark:text-gray-400" />
-          </button>
+          <div className="flex items-center gap-2">
+            {view !== "settings" && (
+              <div className="flex items-center bg-gray-100 dark:bg-gray-900 rounded-lg p-1">
+                {(["all", "bloom", "daisy"] as ProviderFilter[]).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setProviderFilter(p)}
+                    className={`px-3 py-1 rounded-md text-xs font-bold uppercase transition-colors ${
+                      providerFilter === p
+                        ? p === "bloom"
+                          ? "bg-blue-500 text-white"
+                          : p === "daisy"
+                          ? "bg-pink-500 text-white"
+                          : "bg-gray-800 text-white dark:bg-gray-700"
+                        : "text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button
+              onClick={fetchData}
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              aria-label="Refresh"
+            >
+              <RefreshCw className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+            </button>
+          </div>
         </div>
         {loading ? (
           <div className="flex justify-center py-12">
