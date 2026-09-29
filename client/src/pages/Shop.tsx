@@ -171,6 +171,16 @@ const Shop = () => {
   const [transferEmail, setTransferEmail] = useState("");
   const [transferAmount, setTransferAmount] = useState("");
   const [transferLoading, setTransferLoading] = useState(false);
+
+  const BrandedLoader = () => (
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white/95 dark:bg-black/95 backdrop-blur-md">
+      <div className="h-16 w-16 rounded-full border-4 border-[#1565C0]/20 border-t-[#1565C0] animate-spin mb-5" />
+      <h2 className="text-xl md:text-2xl font-black text-[#1565C0] dark:text-[#4d9cff] tracking-tight text-center">
+        Social Media Marketplace
+      </h2>
+      <p className="mt-2 text-sm text-gray-500 dark:text-gray-400 animate-pulse">Please wait...</p>
+    </div>
+  );
   const [showQuickPayDetailsDialog, setShowQuickPayDetailsDialog] = useState(false);
   const [quickPayDetails, setQuickPayDetails] = useState<{
     accountName?: string;
@@ -1239,6 +1249,9 @@ const Shop = () => {
           onShopSignOutClick={handleSignOut}
         />
       </div>
+
+      {/* Branded Loading Overlay */}
+      {(loadingProducts || isCreatingQuickPay) && <BrandedLoader />}
 
       {/* Buy Numbers Page */}
       {showBuyNumbers && user && (
@@ -2560,18 +2573,18 @@ const Shop = () => {
           </DialogHeader>
           
           <div className="space-y-4 py-2">
-            <div className="p-4 bg-gray-50 dark:bg-[#09090b]/50 rounded-xl border border-gray-200 dark:border-gray-700 space-y-3">
+              <div className="p-4 bg-gray-50 dark:bg-[#09090b]/50 rounded-xl border border-gray-200 dark:border-gray-700 space-y-3">
               <div className="flex justify-between items-center py-1 border-b border-gray-200 dark:border-gray-700 pb-2">
                 <span className="text-sm text-gray-500 dark:text-gray-400">Bank Name</span>
-                <span className="font-bold text-gray-900 dark:text-gray-100">Moniepoint (MFB)</span>
+                <span className="font-bold text-gray-900 dark:text-gray-100">Opay</span>
               </div>
               <div className="flex justify-between items-center py-1 border-b border-gray-200 dark:border-gray-700 pb-2">
                 <span className="text-sm text-gray-500 dark:text-gray-400">Account Number</span>
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-lg font-bold text-[#1565C0] dark:text-[#4d9cff]">5022156956</span>
+                  <span className="font-mono text-lg font-bold text-[#1565C0] dark:text-[#4d9cff]">7031334372</span>
                   <button 
                     onClick={() => {
-                      navigator.clipboard.writeText("unavailable");
+                      navigator.clipboard.writeText("7031334372");
                       toast.success("Account number copied!");
                     }}
                     className="p-1 hover:bg-[#d5e5ff] dark:hover:bg-[#0B0F14]/30 rounded transition-colors"
@@ -2582,7 +2595,7 @@ const Shop = () => {
               </div>
               <div className="flex justify-between items-center py-1 border-b border-gray-200 dark:border-gray-700 pb-2">
                 <span className="text-sm text-gray-500 dark:text-gray-400">Account Name</span>
-                <span className="font-bold text-gray-900 dark:text-gray-100">Okeke Victor Udochukwu</span>
+                <span className="font-bold text-gray-900 dark:text-gray-100">Adeosun Oluwatosin Toheeb</span>
               </div>
               <div className="flex justify-between items-center py-1">
                 <span className="text-sm text-gray-500 dark:text-gray-400">Description / Narration</span>
@@ -2603,10 +2616,10 @@ const Shop = () => {
           </div>
           
           <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button
+              <Button
               variant="outline"
               onClick={() => {
-                const details = `Bank: Moniepoint (MFB)\nAccount: unavailable\nName: Okeke Victor Udochukwu\nDescription: Bills`;
+                const details = `Bank: Opay\nAccount: 7031334372\nName: Adeosun Oluwatosin Toheeb\nDescription: Bills`;
                 navigator.clipboard.writeText(details);
                 toast.success("Bank details copied to clipboard!");
               }}
@@ -2615,10 +2628,10 @@ const Shop = () => {
               <Copy className="h-4 w-4 mr-2" />
               Copy Details
             </Button>
-             <Button
+              <Button
               onClick={() => {
                 setShowManualFundsDialog(false);
-                window.open('https://wa.me/2349026876097', '_blank');
+                window.open('https://wa.me/2347031334372', '_blank');
               }}
               className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white"
             >
@@ -2861,20 +2874,20 @@ const Shop = () => {
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <Button onClick={() => initiateErcasPayment()} className="w-full h-14 justify-start px-4 text-left font-semibold text-base bg-[#1565C0] hover:bg-[#0d4f9f] shadow-md">
-              <CreditCard className="mr-3 h-5 w-5" />
-              Instant payment (ercas)
-            </Button>
             <Button onClick={handleQuickPay} disabled={isCreatingQuickPay} className="w-full h-14 justify-start px-4 text-left font-semibold text-base bg-[#1565C0] hover:bg-[#0d4f9f] shadow-md">
               <Zap className="mr-3 h-5 w-5" />
               {isCreatingQuickPay ? "Preparing Quick Pay..." : "Quick Pay"}
+            </Button>
+            <Button onClick={() => toast.info("Instant payment (ERCAS) coming soon")} className="w-full h-14 justify-start px-4 text-left font-semibold text-base bg-[#1565C0] hover:bg-[#0d4f9f] shadow-md">
+              <CreditCard className="mr-3 h-5 w-5" />
+              Instant payment (ercas)
             </Button>
             <Button onClick={() => {
                 setShowPaymentMethodDialog(false);
                 setShowManualFundsDialog(true);
             }} variant="outline" className="w-full h-14 justify-start px-4 text-left font-semibold text-base border-2 hover:bg-gray-50 dark:hover:bg-[#18181b]">
               <Banknote className="mr-3 h-5 w-5" />
-              Manual deposit unavailable!
+              Manual deposit
             </Button>
           </div>
           <DialogFooter>
