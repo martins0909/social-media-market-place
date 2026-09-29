@@ -1858,7 +1858,7 @@ async function daisyRequest(action: string, params: Record<string, string | numb
   }
   const query = new URLSearchParams({ api_key: DAISYSMS_API_KEY, action, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])) });
   const url = `${DAISYSMS_BASE}?${query.toString()}`;
-  const res = await axios.get(url, { timeout: 20000 });
+  const res = await axios.get(url, { timeout: 20000, responseType: "text" });
   return String(res.data || "").trim();
 }
 

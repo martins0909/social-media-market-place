@@ -306,21 +306,32 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
   const formatDate = (d?: string) =>
     d ? new Date(d).toLocaleString() : "—";
 
-  const renderHeader = (title: string, backTo: View = isBloom ? "home" : "services") => (
-    <div className="flex items-center gap-3 mb-4">
-      <button
-        onClick={() => setView(backTo)}
-        className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
-        aria-label="Back"
-      >
-        <ArrowLeft className="h-5 w-5 text-gray-700 dark:text-gray-200" />
-      </button>
-      <h2 className="text-lg font-bold text-gray-900 dark:text-white">{title}</h2>
-      <span className={`ml-auto text-xs px-2 py-1 rounded-full font-bold uppercase ${provider === "bloom" ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300" : "bg-pink-100 text-pink-700 dark:bg-pink-900 dark:text-pink-300"}`}>
-        {provider}
-      </span>
-    </div>
-  );
+  const renderHeader = (title: string, backTo?: View) => {
+    const handleBack = () => {
+      if (backTo) {
+        setView(backTo);
+      } else if (!isBloom) {
+        onClose();
+      } else {
+        setView("home");
+      }
+    };
+    return (
+      <div className="flex items-center gap-3 mb-4">
+        <button
+          onClick={handleBack}
+          className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
+          aria-label="Back"
+        >
+          <ArrowLeft className="h-5 w-5 text-gray-700 dark:text-gray-200" />
+        </button>
+        <h2 className="text-lg font-bold text-gray-900 dark:text-white">{title}</h2>
+        <span className={`ml-auto text-xs px-2 py-1 rounded-full font-bold uppercase ${provider === "bloom" ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300" : "bg-pink-100 text-pink-700 dark:bg-pink-900 dark:text-pink-300"}`}>
+          {provider}
+        </span>
+      </div>
+    );
+  };
 
   const renderBloomHome = () => (
     <div className="space-y-4 animate-in fade-in duration-300">
@@ -523,7 +534,7 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
 
   const renderMyNumbers = () => (
     <div className="animate-in fade-in duration-300">
-      {renderHeader("My Numbers")}
+      {renderHeader("My Numbers", isBloom ? "home" : "services")}
       <div className="space-y-3 pb-20">
         {activations.map((a) => (
           <div key={a._id || a.activationId} className="rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-4">
@@ -579,7 +590,7 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
 
   const renderHistory = () => (
     <div className="animate-in fade-in duration-300">
-      {renderHeader("Purchase History")}
+      {renderHeader("Purchase History", isBloom ? "home" : "services")}
       <div className="space-y-2 pb-20">
         {transactions.map((t) => (
           <div key={t._id || t.reference} className="flex items-center justify-between rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-3">
@@ -607,7 +618,7 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
 
   const renderRentals = () => (
     <div className="animate-in fade-in duration-300">
-      {renderHeader("Rentals")}
+      {renderHeader("Rentals", isBloom ? "home" : "services")}
       <div className="space-y-3 pb-20">
         {rentals.map((r) => (
           <div key={r._id || r.rentalId} className="rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-4">
