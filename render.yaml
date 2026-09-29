@@ -43,6 +43,8 @@ services:
         sync: false
       - key: BLOOMSMS_API_KEY
         sync: false
+      - key: DAISYSMS_API_KEY
+        sync: false
 
   - type: static
     name: social-media-marketplace-client

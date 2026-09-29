@@ -64,6 +64,7 @@ export interface IReferralBonus extends Document {
 export interface INumberActivation extends Document {
   userId: string;
   email: string;
+  provider: "bloom" | "daisy";
   activationId: string;
   phoneNumber: string;
   service: string;
@@ -82,6 +83,7 @@ export interface INumberActivation extends Document {
 export interface INumberRental extends Document {
   userId: string;
   email: string;
+  provider: "bloom" | "daisy";
   rentalId: string;
   phoneNumber: string;
   serviceCode: string;
@@ -98,6 +100,7 @@ export interface INumberRental extends Document {
 export interface INumberTransaction extends Document {
   userId: string;
   email: string;
+  provider: "bloom" | "daisy";
   reference: string;
   amount: number;
   type: "activation" | "rental" | "refund";
@@ -326,6 +329,7 @@ ReferralBonusSchema.index({ createdAt: -1 });
 const NumberActivationSchema = new Schema<INumberActivation>({
   userId: { type: String, required: true, index: true },
   email: { type: String, required: true },
+  provider: { type: String, enum: ["bloom", "daisy"], required: true, index: true },
   activationId: { type: String, required: true, unique: true },
   phoneNumber: { type: String, required: true },
   service: { type: String, required: true },
@@ -346,6 +350,7 @@ NumberActivationSchema.index({ status: 1 });
 const NumberRentalSchema = new Schema<INumberRental>({
   userId: { type: String, required: true, index: true },
   email: { type: String, required: true },
+  provider: { type: String, enum: ["bloom", "daisy"], required: true, index: true },
   rentalId: { type: String, required: true, unique: true },
   phoneNumber: { type: String, required: true },
   serviceCode: { type: String, required: true },
@@ -364,6 +369,7 @@ NumberRentalSchema.index({ status: 1 });
 const NumberTransactionSchema = new Schema<INumberTransaction>({
   userId: { type: String, required: true, index: true },
   email: { type: String, required: true },
+  provider: { type: String, enum: ["bloom", "daisy"], required: true, index: true },
   reference: { type: String, required: true, unique: true },
   amount: { type: Number, required: true },
   type: { type: String, enum: ["activation", "rental", "refund"], required: true },

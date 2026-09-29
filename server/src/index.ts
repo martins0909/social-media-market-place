@@ -1544,6 +1544,7 @@ app.post("/api/numbers/activations", async (req: Request, res: Response) => {
       const activation = new NumberActivation({
         userId: user._id.toString(),
         email: user.email,
+        provider: "bloom",
         activationId: String(bloom.activation_id),
         phoneNumber: String(bloom.phone_number),
         service,
@@ -1560,6 +1561,7 @@ app.post("/api/numbers/activations", async (req: Request, res: Response) => {
       await new NumberTransaction({
         userId: user._id.toString(),
         email: user.email,
+        provider: "bloom",
         reference: generateReference("ACT"),
         amount: priceNgn,
         type: "activation",
@@ -1595,7 +1597,9 @@ app.post("/api/numbers/activations", async (req: Request, res: Response) => {
 app.get("/api/numbers/activations/:userId", async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
-    const activations = await NumberActivation.find({ userId }).sort({ createdAt: -1 }).lean();
+    const filter: any = { userId };
+    if (req.query.provider) filter.provider = req.query.provider;
+    const activations = await NumberActivation.find(filter).sort({ createdAt: -1 }).lean();
     res.json(activations);
   } catch (err) {
     console.error("Error fetching activations:", err);
@@ -1677,6 +1681,7 @@ app.post("/api/numbers/rentals", async (req: Request, res: Response) => {
       const rental = new NumberRental({
         userId: user._id.toString(),
         email: user.email,
+        provider: "bloom",
         rentalId: String(bloom.id),
         phoneNumber: String(bloom.phone_number),
         serviceCode: service,
@@ -1693,6 +1698,7 @@ app.post("/api/numbers/rentals", async (req: Request, res: Response) => {
       await new NumberTransaction({
         userId: user._id.toString(),
         email: user.email,
+        provider: "bloom",
         reference: generateReference("RNT"),
         amount: priceNgn,
         type: "rental",
@@ -1753,7 +1759,9 @@ app.post("/api/numbers/rentals/:rentalId/cancel", async (req: Request, res: Resp
 app.get("/api/numbers/transactions/:userId", async (req: Request, res: Response) => {
   try {
     const { userId } = req.params;
-    const transactions = await NumberTransaction.find({ userId }).sort({ createdAt: -1 }).lean();
+    const filter: any = { userId };
+    if (req.query.provider) filter.provider = req.query.provider;
+    const transactions = await NumberTransaction.find(filter).sort({ createdAt: -1 }).lean();
     res.json(transactions);
   } catch (err) {
     console.error("Error fetching number transactions:", err);
@@ -1773,7 +1781,7 @@ app.post("/api/numbers/webhook", async (req: Request, res: Response) => {
       }
       if (data.status) update.status = String(data.status);
       if (Object.keys(update).length > 0) {
-        await NumberActivation.updateOne({ activationId: String(data.activation_id) }, update).exec();
+        await NumberActivation.updateOne({ activationId: String(data.activation_id), provider: "bloom" }, update).exec();
       }
     }
     res.json({ ok: true });
@@ -1836,6 +1844,193 @@ app.get("/api/numbers/admin/transactions", async (req: Request, res: Response) =
   } catch (err) {
     console.error("Admin transactions error:", err);
     res.status(500).json({ error: "Failed to fetch transactions" });
+  }
+});
+
+// ======== DAISYSMS NUMBER MODULE ========
+
+const DAISYSMS_BASE = "https://daisysms.io/stubs/handler_api.php";
+const DAISYSMS_API_KEY = process.env.DAISYSMS_API_KEY || "";
+
+async function daisyRequest(action: string, params: Record<string, string | number | boolean> = {}) {
+  if (!DAISYSMS_API_KEY) {
+    throw new Error("DaisySMS API key is not configured");
+  }
+  const query = new URLSearchParams({ api_key: DAISYSMS_API_KEY, action, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])) });
+  const url = `${DAISYSMS_BASE}?${query.toString()}`;
+  const res = await axios.get(url, { timeout: 20000 });
+  return String(res.data || "").trim();
+}
+
+// Proxy: DaisySMS services/prices
+app.get("/api/numbers/daisy/services", async (req: Request, res: Response) => {
+  try {
+    const text = await daisyRequest("getPricesVerification");
+    const settings = await ensureSettings();
+    let data: any = {};
+    try {
+      data = JSON.parse(text);
+    } catch {
+      return res.status(502).json({ error: "Invalid response from DaisySMS", details: text });
+    }
+    // Attach NGN prices to each service/country entry
+    if (data && typeof data === "object") {
+      Object.keys(data).forEach((service) => {
+        const countries = data[service];
+        if (countries && typeof countries === "object") {
+          Object.keys(countries).forEach((country) => {
+            const entry = countries[country];
+            if (entry && typeof entry === "object" && entry.cost !== undefined) {
+              entry.priceNgn = calculateNgnPrice(Number(entry.cost), settings.exchangeRate, settings.markupPercentage);
+            }
+          });
+        }
+      });
+    }
+    res.json({ status: "success", data });
+  } catch (err: any) {
+    console.error("DaisySMS services error:", err.response?.data || err.message);
+    res.status(502).json({ error: "Failed to fetch DaisySMS services", details: err.response?.data || err.message });
+  }
+});
+
+// Rent a DaisySMS number
+app.post("/api/numbers/daisy/activations", async (req: Request, res: Response) => {
+  const session = await mongoose.startSession();
+  try {
+    const { userId, service, serviceName, maxPrice = 5.5 } = req.body;
+    if (!userId || !service) {
+      return res.status(400).json({ error: "userId and service are required" });
+    }
+    const user = await User.findById(userId).exec();
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const settings = await ensureSettings();
+    const priceUsd = Number(maxPrice);
+    const priceNgn = calculateNgnPrice(priceUsd, settings.exchangeRate, settings.markupPercentage);
+
+    if ((user.balance || 0) < priceNgn) {
+      return res.status(400).json({ error: "Insufficient balance" });
+    }
+
+    const text = await daisyRequest("getNumber", { service, max_price: priceUsd });
+    // Expected: ACCESS_NUMBER:id:phone
+    if (!text.startsWith("ACCESS_NUMBER")) {
+      return res.status(502).json({ error: "Failed to rent number from DaisySMS", details: text });
+    }
+    const parts = text.split(":");
+    const activationId = parts[1];
+    const phoneNumber = parts[2];
+
+    await session.withTransaction(async () => {
+      await User.updateOne({ _id: user._id }, { $inc: { balance: -priceNgn } }).session(session).exec();
+
+      const activation = new NumberActivation({
+        userId: user._id.toString(),
+        email: user.email,
+        provider: "daisy",
+        activationId,
+        phoneNumber,
+        service,
+        serviceName: serviceName || service,
+        country: "187",
+        countryName: "United States",
+        priceUsd,
+        priceNgn,
+        status: "waiting",
+      });
+      await activation.save({ session });
+
+      await new NumberTransaction({
+        userId: user._id.toString(),
+        email: user.email,
+        provider: "daisy",
+        reference: generateReference("DAISY"),
+        amount: priceNgn,
+        type: "activation",
+        method: "wallet",
+        status: "completed",
+        activationId,
+      }).save({ session });
+
+      res.json({
+        ok: true,
+        activation: {
+          id: activation._id,
+          activationId,
+          phoneNumber,
+          service: activation.serviceName,
+          country: activation.countryName,
+          priceNgn,
+          status: activation.status,
+        },
+        newBalance: (user.balance || 0) - priceNgn,
+      });
+    });
+  } catch (err: any) {
+    console.error("DaisySMS rent error:", err.response?.data || err.message);
+    res.status(500).json({ error: "Failed to rent DaisySMS number", details: err.response?.data || err.message });
+  } finally {
+    session.endSession();
+  }
+});
+
+// Poll DaisySMS activation status
+app.get("/api/numbers/daisy/activations/status/:activationId", async (req: Request, res: Response) => {
+  try {
+    const { activationId } = req.params;
+    const text = await daisyRequest("getStatus", { id: activationId });
+    let update: any = {};
+    let statusText = text;
+    if (text.startsWith("STATUS_OK")) {
+      const code = text.split(":")[1];
+      update.smsCode = code;
+      update.status = "code_received";
+      statusText = `STATUS_OK:${code}`;
+    } else if (text === "STATUS_CANCEL") {
+      update.status = "cancelled";
+    }
+    if (Object.keys(update).length > 0) {
+      await NumberActivation.updateOne({ activationId, provider: "daisy" }, update).exec();
+    }
+    res.json({ status: "success", data: statusText });
+  } catch (err: any) {
+    console.error("DaisySMS status error:", err.response?.data || err.message);
+    res.status(500).json({ error: "Failed to fetch status", details: err.response?.data || err.message });
+  }
+});
+
+// Update DaisySMS activation status (done=6 or cancel=8)
+app.patch("/api/numbers/daisy/activations/:activationId", async (req: Request, res: Response) => {
+  try {
+    const { activationId } = req.params;
+    const { status } = req.body; // 6 = done, 8 = cancel
+    if (!status) return res.status(400).json({ error: "status is required" });
+    const text = await daisyRequest("setStatus", { id: activationId, status });
+    const localStatus = status === "8" ? "cancelled" : "completed";
+    await NumberActivation.updateOne({ activationId, provider: "daisy" }, { status: localStatus }).exec();
+    res.json({ status: "success", data: text });
+  } catch (err: any) {
+    console.error("DaisySMS update error:", err.response?.data || err.message);
+    res.status(500).json({ error: "Failed to update activation", details: err.response?.data || err.message });
+  }
+});
+
+// Webhook: receive SMS/OTP from DaisySMS
+app.post("/api/numbers/daisy/webhook", async (req: Request, res: Response) => {
+  try {
+    const data = req.body;
+    if (data?.activationId) {
+      const update: any = {};
+      if (data.code) update.smsCode = String(data.code);
+      if (data.text) update.smsText = String(data.text);
+      update.status = "code_received";
+      await NumberActivation.updateOne({ activationId: String(data.activationId), provider: "daisy" }, update).exec();
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("DaisySMS webhook error:", err);
+    res.status(500).json({ error: "Webhook processing failed" });
   }
 });
 
