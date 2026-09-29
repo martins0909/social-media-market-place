@@ -26,7 +26,7 @@ interface BuyNumbersProps {
 }
 
 type BloomView = "home" | "us" | "international" | "country" | "my-numbers" | "history" | "rentals";
-type DaisyView = "services" | "my-numbers" | "history";
+type DaisyView = "home" | "us" | "international" | "country" | "my-numbers" | "history";
 type View = BloomView | DaisyView;
 
 interface Country {
@@ -40,6 +40,7 @@ interface Service {
   price: string;
   priceNgn: number;
   stock: number;
+  countryId?: string;
 }
 
 interface Activation {
@@ -86,9 +87,11 @@ const DEFAULT_COUNTRY = "187"; // USA
 
 export default function BuyNumbers({ user, provider, onClose, onBalanceChange }: BuyNumbersProps) {
   const isBloom = provider === "bloom";
-  const [view, setView] = useState<View>(isBloom ? "home" : "services");
+  const [view, setView] = useState<View>("home");
   const [selectedCountry, setSelectedCountry] = useState<Country | null>(null);
   const [countries, setCountries] = useState<Country[]>([]);
+  const [daisyCountries, setDaisyCountries] = useState<Country[]>([]);
+  const [daisyAllServices, setDaisyAllServices] = useState<Service[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
@@ -134,6 +137,7 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
       const res = await apiFetch("/api/numbers/daisy/services");
       const data = res?.data;
       const mapped: Service[] = [];
+      const countryMap = new Map<string, string>();
       if (data && typeof data === "object") {
         Object.keys(data).forEach((serviceCode) => {
           const countries = data[serviceCode];
@@ -141,19 +145,22 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
             Object.keys(countries).forEach((countryId) => {
               const entry = countries[countryId];
               if (entry && typeof entry === "object" && entry.cost !== undefined) {
+                countryMap.set(countryId, `Country ${countryId}`);
                 mapped.push({
                   code: serviceCode,
-                  name: `${serviceCode.toUpperCase()} (US)`,
+                  name: serviceCode.toUpperCase(),
                   price: String(entry.cost || 0),
                   priceNgn: entry.priceNgn || Math.ceil(Number(entry.cost || 0) * 1500),
                   stock: entry.count || 0,
-                });
+                  countryId,
+                } as Service);
               }
             });
           }
         });
       }
-      setServices(mapped);
+      setDaisyAllServices(mapped);
+      setDaisyCountries(Array.from(countryMap.entries()).map(([id, name]) => ({ id, name })));
       if (mapped.length === 0) {
         console.log("DaisySMS services response:", res);
       }
@@ -182,6 +189,7 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
 
   useEffect(() => {
     if (isBloom) fetchBloomCountries();
+    else fetchDaisyServices();
     fetchUserData();
     return () => {
       if (pollTimer.current) clearInterval(pollTimer.current);
@@ -189,13 +197,20 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
   }, []);
 
   useEffect(() => {
-    if (!isBloom) {
-      fetchDaisyServices();
-      return;
+    if (isBloom) {
+      if (view === "us") fetchBloomServices(DEFAULT_COUNTRY);
+      if (view === "country" && selectedCountry) fetchBloomServices(selectedCountry.id);
+    } else {
+      if (view === "us") {
+        const usCodes = ["12", "187"];
+        setServices(daisyAllServices.filter((s) => usCodes.includes(s.countryId || "")));
+      } else if (view === "country" && selectedCountry) {
+        setServices(daisyAllServices.filter((s) => s.countryId === selectedCountry.id));
+      } else if (view === "international") {
+        setServices([]);
+      }
     }
-    if (view === "us") fetchBloomServices(DEFAULT_COUNTRY);
-    if (view === "country" && selectedCountry) fetchBloomServices(selectedCountry.id);
-  }, [view, selectedCountry, provider]);
+  }, [view, selectedCountry, provider, daisyAllServices]);
 
   useEffect(() => {
     if (pollingId) {
@@ -335,10 +350,10 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
     );
   };
 
-  const renderBloomHome = () => (
+  const renderHome = () => (
     <div className="space-y-4 animate-in fade-in duration-300">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-black text-gray-900 dark:text-white">Buy Numbers</h2>
+        <h2 className="text-xl font-black text-gray-900 dark:text-white">{isBloom ? "Buy Numbers" : "Buy USA Numbers"}</h2>
         <button
           onClick={onClose}
           className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
@@ -351,7 +366,7 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
       <div className="grid grid-cols-2 gap-3">
         <button
           onClick={() => setView("us")}
-          className="flex flex-col items-start gap-3 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 p-4 text-white shadow-lg active:scale-[0.98] transition-transform"
+          className={`flex flex-col items-start gap-3 rounded-2xl p-4 text-white shadow-lg active:scale-[0.98] transition-transform ${isBloom ? "bg-gradient-to-br from-blue-500 to-blue-600" : "bg-gradient-to-br from-pink-500 to-pink-600"}`}
         >
           <span className="text-3xl">🇺🇸</span>
           <div className="text-left">
@@ -362,12 +377,12 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
 
         <button
           onClick={() => { setSearch(""); setView("international"); }}
-          className="flex flex-col items-start gap-3 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 p-4 text-white shadow-lg active:scale-[0.98] transition-transform"
+          className={`flex flex-col items-start gap-3 rounded-2xl p-4 text-white shadow-lg active:scale-[0.98] transition-transform ${isBloom ? "bg-gradient-to-br from-emerald-500 to-emerald-600" : "bg-gradient-to-br from-purple-500 to-purple-600"}`}
         >
           <Globe className="h-8 w-8" />
           <div className="text-left">
             <div className="font-bold">International</div>
-            <div className="text-xs text-white/80">160+ countries</div>
+            <div className="text-xs text-white/80">{isBloom ? "160+ countries" : "All countries"}</div>
           </div>
         </button>
       </div>
@@ -443,7 +458,7 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
           className="pl-9 bg-white dark:bg-[#101820] border-gray-200 dark:border-gray-800"
         />
       </div>
-      {loading ? (
+      {loading && services.length === 0 ? (
         <div className="flex justify-center py-10">
           <Loader2 className="h-8 w-8 animate-spin text-[#1565C0]" />
         </div>
@@ -451,7 +466,7 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
         <div className="space-y-3 pb-20">
           {filteredServices.map((s) => (
             <div
-              key={s.code}
+              key={`${s.code}-${s.countryId || ""}`}
               className="flex items-center justify-between rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-3"
             >
               <div className="flex items-center gap-3">
@@ -460,7 +475,9 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
                 </div>
                 <div>
                   <div className="font-semibold text-gray-900 dark:text-white text-sm">{s.name}</div>
-                  <div className="text-xs text-gray-500">{s.stock?.toLocaleString()} pcs</div>
+                  <div className="text-xs text-gray-500">
+                    {s.stock?.toLocaleString()} pcs{s.countryId ? ` · Country ${s.countryId}` : ""}
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -472,7 +489,7 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
                   size="sm"
                   onClick={() => handleRent(s)}
                   disabled={loading || !isLoggedIn}
-                  className="bg-[#1565C0] hover:bg-[#0d4f9f] text-white"
+                  className={`${isBloom ? "bg-[#1565C0] hover:bg-[#0d4f9f]" : "bg-pink-600 hover:bg-pink-700"} text-white`}
                 >
                   Buy
                 </Button>
@@ -487,52 +504,57 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
     </div>
   );
 
-  const renderInternational = () => (
-    <div className="animate-in fade-in duration-300">
-      {renderHeader("International Numbers")}
-      <div className="flex items-center gap-2 mb-3">
-        <button
-          onClick={() => setView("us")}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-bold"
-        >
-          <span>🇺🇸</span> US Numbers
-        </button>
-      </div>
-      <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <Input
-          placeholder="Search countries..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9 bg-white dark:bg-[#101820] border-gray-200 dark:border-gray-800"
-        />
-      </div>
-      {loading ? (
-        <div className="flex justify-center py-10">
-          <Loader2 className="h-8 w-8 animate-spin text-[#1565C0]" />
+  const renderInternational = () => {
+    const list = isBloom ? filteredCountries : daisyCountries.filter((c) =>
+      c.name.toLowerCase().includes(search.toLowerCase()) || c.id.includes(search)
+    );
+    return (
+      <div className="animate-in fade-in duration-300">
+        {renderHeader(isBloom ? "International Numbers" : "DaisySMS Countries")}
+        <div className="flex items-center gap-2 mb-3">
+          <button
+            onClick={() => setView("us")}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold ${isBloom ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300" : "bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300"}`}
+          >
+            <span>🇺🇸</span> US Numbers
+          </button>
         </div>
-      ) : (
-        <div className="space-y-2 pb-20">
-          {filteredCountries.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => { setSelectedCountry(c); setSearch(""); setView("country"); }}
-              className="w-full flex items-center justify-between rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-3 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <Flag className="h-5 w-5 text-gray-500" />
-                <span className="font-medium text-gray-900 dark:text-white text-sm">{c.name}</span>
-              </div>
-              <ChevronRight className="h-5 w-5 text-gray-400" />
-            </button>
-          ))}
-          {filteredCountries.length === 0 && !loading && (
-            <div className="text-center py-10 text-gray-500 dark:text-gray-400">No countries found</div>
-          )}
+        <div className="relative mb-4">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Input
+            placeholder="Search countries..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9 bg-white dark:bg-[#101820] border-gray-200 dark:border-gray-800"
+          />
         </div>
-      )}
-    </div>
-  );
+        {loading && list.length === 0 ? (
+          <div className="flex justify-center py-10">
+            <Loader2 className="h-8 w-8 animate-spin text-[#1565C0]" />
+          </div>
+        ) : (
+          <div className="space-y-2 pb-20">
+            {list.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => { setSelectedCountry(c); setSearch(""); setView("country"); }}
+                className="w-full flex items-center justify-between rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-3 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <Flag className="h-5 w-5 text-gray-500" />
+                  <span className="font-medium text-gray-900 dark:text-white text-sm">{c.name}</span>
+                </div>
+                <ChevronRight className="h-5 w-5 text-gray-400" />
+              </button>
+            ))}
+            {list.length === 0 && !loading && (
+              <div className="text-center py-10 text-gray-500 dark:text-gray-400">No countries found</div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderMyNumbers = () => (
     <div className="animate-in fade-in duration-300">
@@ -641,71 +663,13 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
     </div>
   );
 
-  const renderDaisyServices = () => (
-    <div className="animate-in fade-in duration-300">
-      {renderHeader("USA Numbers (DaisySMS)")}
-      <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Virtual USA numbers for SMS verification</p>
-      <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <Input
-          placeholder="Search services..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9 bg-white dark:bg-[#101820] border-gray-200 dark:border-gray-800"
-        />
-      </div>
-      {loading ? (
-        <div className="flex justify-center py-10">
-          <Loader2 className="h-8 w-8 animate-spin text-[#1565C0]" />
-        </div>
-      ) : (
-        <div className="space-y-3 pb-20">
-          {filteredServices.map((s) => (
-            <div
-              key={s.code}
-              className="flex items-center justify-between rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-3"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-lg">
-                  {s.name.toLowerCase().includes("whatsapp") ? "💬" : s.name.toLowerCase().includes("telegram") ? "✈️" : "📱"}
-                </div>
-                <div>
-                  <div className="font-semibold text-gray-900 dark:text-white text-sm">{s.name}</div>
-                  <div className="text-xs text-gray-500">{s.stock?.toLocaleString()} pcs</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="text-right">
-                  <div className="text-sm font-bold text-[#1565C0]">₦{s.priceNgn.toLocaleString()}</div>
-                  <div className="text-[10px] text-gray-400">${s.price}</div>
-                </div>
-                <Button
-                  size="sm"
-                  onClick={() => handleRent(s)}
-                  disabled={loading || !isLoggedIn}
-                  className="bg-pink-600 hover:bg-pink-700 text-white"
-                >
-                  Buy
-                </Button>
-              </div>
-            </div>
-          ))}
-          {filteredServices.length === 0 && !loading && (
-            <div className="text-center py-10 text-gray-500 dark:text-gray-400">No services found</div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-
   return (
     <div className="fixed inset-0 z-40 bg-gray-50 dark:bg-black flex flex-col pt-[60px] pb-[80px]">
       <div className="flex-1 overflow-y-auto p-4">
-        {isBloom && view === "home" && renderBloomHome()}
-        {isBloom && view === "us" && renderServiceList("US Numbers", "United States")}
-        {isBloom && view === "international" && renderInternational()}
-        {isBloom && view === "country" && selectedCountry && renderServiceList(selectedCountry.name, selectedCountry.name)}
-        {!isBloom && view === "services" && renderDaisyServices()}
+        {view === "home" && renderHome()}
+        {view === "us" && renderServiceList("US Numbers", "United States")}
+        {view === "international" && renderInternational()}
+        {view === "country" && selectedCountry && renderServiceList(selectedCountry.name, selectedCountry.name)}
         {view === "my-numbers" && renderMyNumbers()}
         {view === "history" && renderHistory()}
         {view === "rentals" && renderRentals()}
