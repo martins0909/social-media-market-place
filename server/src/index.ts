@@ -1866,6 +1866,10 @@ async function daisyRequest(action: string, params: Record<string, string | numb
 app.get("/api/numbers/daisy/services", async (req: Request, res: Response) => {
   try {
     const text = await daisyRequest("getPricesVerification");
+    console.log("DaisySMS services raw response:", text.substring(0, 500));
+    if (!text || text.startsWith("BAD_KEY") || text.startsWith("NO") || text.startsWith("ERROR")) {
+      return res.status(502).json({ error: "DaisySMS returned an error", details: text });
+    }
     const settings = await ensureSettings();
     let data: any = {};
     try {

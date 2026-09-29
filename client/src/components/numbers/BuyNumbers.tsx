@@ -139,12 +139,11 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
           const countries = data[serviceCode];
           if (countries && typeof countries === "object") {
             Object.keys(countries).forEach((countryId) => {
-              if (countryId !== DEFAULT_COUNTRY) return; // DaisySMS USA only for this flow
               const entry = countries[countryId];
-              if (entry && typeof entry === "object") {
+              if (entry && typeof entry === "object" && entry.cost !== undefined) {
                 mapped.push({
                   code: serviceCode,
-                  name: serviceCode.toUpperCase(),
+                  name: `${serviceCode.toUpperCase()} (US)`,
                   price: String(entry.cost || 0),
                   priceNgn: entry.priceNgn || Math.ceil(Number(entry.cost || 0) * 1500),
                   stock: entry.count || 0,
@@ -155,6 +154,9 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
         });
       }
       setServices(mapped);
+      if (mapped.length === 0) {
+        console.log("DaisySMS services response:", res);
+      }
     } catch (e: any) {
       toast.error(e.message || "Failed to load DaisySMS services");
     } finally {
