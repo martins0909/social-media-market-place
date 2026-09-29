@@ -1318,9 +1318,17 @@ const Shop = () => {
             <DialogDescription className="hidden">Notification about the new Telegram channel</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col items-center text-center space-y-3 sm:space-y-4">
-            <p className="text-sm sm:text-base text-gray-700 dark:text-gray-300 leading-relaxed px-1 sm:px-2">
-              Our previous Telegram channel has been banned. kindly use the link below to join our new channel and contact the new support number for assistance
-            </p>
+            <div className="text-sm sm:text-base text-gray-700 dark:text-gray-300 leading-relaxed px-1 sm:px-2 space-y-3 text-left">
+              <div>
+                <p className="font-bold text-gray-900 dark:text-white">Join Our New Channel</p>
+                <p>Kindly use the link below to join our new channel for updates, announcements, and important information. If you need any assistance, please contact our Support Team.</p>
+              </div>
+              <div>
+                <p className="font-bold text-[#1565C0] dark:text-[#4d9cff]">Refer & Earn ₦300!</p>
+                <p>Invite your friends and earn ₦300 for every successful referral. The person you refer will also receive ₦200 when they make a ₦3,000 product purchase.</p>
+              </div>
+              <p className="font-medium">👉 Join now, refer your friends, and start earning!</p>
+            </div>
             
             <div className="w-full flex justify-center py-2">
               <Button 
