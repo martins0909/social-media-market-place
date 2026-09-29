@@ -1574,7 +1574,7 @@ const Shop = () => {
                     <Smartphone className="h-5 w-5" />
                   </div>
                   <span className="text-xs font-semibold text-gray-800 dark:text-gray-200">Buy Numbers</span>
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400 -mt-1">BloomSMS</span>
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400 -mt-1">International</span>
                 </button>
 
                 <button
@@ -1585,7 +1585,7 @@ const Shop = () => {
                     <Smartphone className="h-5 w-5" />
                   </div>
                   <span className="text-xs font-semibold text-gray-800 dark:text-gray-200">Buy USA Numbers</span>
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400 -mt-1">DaisySMS</span>
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400 -mt-1">USA</span>
                 </button>
 
                 <button

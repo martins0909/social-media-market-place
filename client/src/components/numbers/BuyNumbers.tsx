@@ -162,10 +162,10 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
       setDaisyAllServices(mapped);
       setDaisyCountries(Array.from(countryMap.entries()).map(([id, name]) => ({ id, name })));
       if (mapped.length === 0) {
-        console.log("DaisySMS services response:", res);
+        console.log("Number services response:", res);
       }
     } catch (e: any) {
-      toast.error(e.message || "Failed to load DaisySMS services");
+      toast.error(e.message || "Failed to load services");
     } finally {
       setLoading(false);
     }
@@ -343,9 +343,6 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
           <ArrowLeft className="h-5 w-5 text-gray-700 dark:text-gray-200" />
         </button>
         <h2 className="text-lg font-bold text-gray-900 dark:text-white">{title}</h2>
-        <span className={`ml-auto text-xs px-2 py-1 rounded-full font-bold uppercase ${provider === "bloom" ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300" : "bg-pink-100 text-pink-700 dark:bg-pink-900 dark:text-pink-300"}`}>
-          {provider}
-        </span>
       </div>
     );
   };
@@ -524,7 +521,7 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
     );
     return (
       <div className="animate-in fade-in duration-300">
-        {renderHeader(isBloom ? "International Numbers" : "DaisySMS Countries")}
+        {renderHeader("International Numbers")}
         <div className="flex items-center gap-2 mb-3">
           <button
             onClick={() => setView("us")}
@@ -576,13 +573,10 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
       <div className="space-y-3 pb-20">
         {activations.map((a) => (
           <div key={a._id || a.activationId} className="rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-4">
-            <div className="flex items-center justify-between mb-2">
-              <div className="font-bold text-gray-900 dark:text-white">{a.phoneNumber}</div>
-              <div className="flex items-center gap-2">
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${a.provider === "bloom" ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300" : "bg-pink-100 text-pink-700 dark:bg-pink-900 dark:text-pink-300"}`}>
-                  {a.provider}
-                </span>
-                <span
+              <div className="flex items-center justify-between mb-2">
+                <div className="font-bold text-gray-900 dark:text-white">{a.phoneNumber}</div>
+                <div className="flex items-center gap-2">
+                  <span
                   className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                     a.status === "code_received"
                       ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
@@ -635,9 +629,6 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-gray-900 dark:text-white text-sm capitalize">{t.type}</span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold uppercase ${t.provider === "bloom" ? "bg-blue-100 text-blue-700" : "bg-pink-100 text-pink-700"}`}>
-                  {t.provider}
-                </span>
               </div>
               <div className="text-xs text-gray-500">{formatDate(t.createdAt)}</div>
             </div>
