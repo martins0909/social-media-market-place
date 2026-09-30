@@ -73,7 +73,7 @@ export interface INumberActivation extends Document {
   countryName?: string;
   priceUsd: number;
   priceNgn: number;
-  status: "waiting" | "code_received" | "completed" | "cancelled";
+  status: "waiting" | "code_received" | "completed" | "cancelled" | "failed";
   smsCode?: string;
   smsText?: string;
   expiresAt?: Date;
@@ -338,7 +338,7 @@ const NumberActivationSchema = new Schema<INumberActivation>({
   countryName: { type: String },
   priceUsd: { type: Number, required: true },
   priceNgn: { type: Number, required: true },
-  status: { type: String, enum: ["waiting", "code_received", "completed", "cancelled"], default: "waiting" },
+  status: { type: String, enum: ["waiting", "code_received", "completed", "cancelled", "failed"], default: "waiting" },
   smsCode: { type: String },
   smsText: { type: String },
   expiresAt: { type: Date },

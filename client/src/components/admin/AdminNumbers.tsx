@@ -29,7 +29,7 @@ interface Activation {
   countryName?: string;
   country: string;
   priceNgn: number;
-  status: "waiting" | "code_received" | "completed" | "cancelled";
+  status: "waiting" | "code_received" | "completed" | "cancelled" | "failed";
   smsCode?: string;
   smsText?: string;
   expiresAt?: string;
@@ -153,6 +153,25 @@ export default function AdminNumbers() {
     return `${mins}m ${secs}s`;
   };
 
+  const getActivationStatusDisplay = (a: Activation) => {
+    if (a.smsCode && (a.status === "code_received" || a.status === "completed")) {
+      return { label: "Successful", className: "text-green-600 dark:text-green-400 font-semibold" };
+    }
+    switch (a.status) {
+      case "waiting":
+        return { label: "Pending", className: "text-amber-600 dark:text-amber-400 font-semibold" };
+      case "code_received":
+      case "completed":
+        return { label: "Successful", className: "text-green-600 dark:text-green-400 font-semibold" };
+      case "cancelled":
+        return { label: "Cancelled", className: "text-gray-500 dark:text-gray-400" };
+      case "failed":
+        return { label: "Failed", className: "text-red-600 dark:text-red-400 font-semibold" };
+      default:
+        return { label: a.status, className: "text-gray-500 dark:text-gray-400" };
+    }
+  };
+
   const renderTransactions = () => (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -194,41 +213,46 @@ export default function AdminNumbers() {
             <th className="text-left p-3 font-semibold">Service</th>
             <th className="text-left p-3 font-semibold">Number</th>
             <th className="text-left p-3 font-semibold">OTP Code</th>
+            <th className="text-left p-3 font-semibold">Status</th>
             <th className="text-left p-3 font-semibold">Timer</th>
             <th className="text-left p-3 font-semibold">Action</th>
           </tr>
         </thead>
         <tbody>
-          {data.map((a) => (
-            <tr key={a._id || a.activationId} className="border-b border-gray-100 dark:border-gray-800">
-              <td className="p-3"><ProviderBadge provider={a.provider} /></td>
-              <td className="p-3">{a.serviceName || a.activationId}</td>
-              <td className="p-3 font-mono">{a.phoneNumber}</td>
-              <td className="p-3">
-                {a.smsCode ? (
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-green-600">{a.smsCode}</span>
-                    <button onClick={() => copyCode(a.smsCode!)} className="text-gray-400 hover:text-gray-600">
-                      <Copy className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ) : (
-                  <span className="text-amber-600">Waiting...</span>
-                )}
-              </td>
-              <td className="p-3">{getRemainingTime(a.expiresAt)}</td>
-              <td className="p-3">
-                <button
-                  onClick={() => copyCode(a.phoneNumber)}
-                  className="text-[#1565C0] hover:underline text-xs"
-                >
-                  Copy number
-                </button>
-              </td>
-            </tr>
-          ))}
+          {data.map((a) => {
+            const statusDisplay = getActivationStatusDisplay(a);
+            return (
+              <tr key={a._id || a.activationId} className="border-b border-gray-100 dark:border-gray-800">
+                <td className="p-3"><ProviderBadge provider={a.provider} /></td>
+                <td className="p-3">{a.serviceName || a.activationId}</td>
+                <td className="p-3 font-mono">{a.phoneNumber}</td>
+                <td className="p-3">
+                  {a.smsCode ? (
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-green-600">{a.smsCode}</span>
+                      <button onClick={() => copyCode(a.smsCode!)} className="text-gray-400 hover:text-gray-600">
+                        <Copy className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-amber-600">Waiting...</span>
+                  )}
+                </td>
+                <td className={`p-3 capitalize ${statusDisplay.className}`}>{statusDisplay.label}</td>
+                <td className="p-3">{getRemainingTime(a.expiresAt)}</td>
+                <td className="p-3">
+                  <button
+                    onClick={() => copyCode(a.phoneNumber)}
+                    className="text-[#1565C0] hover:underline text-xs"
+                  >
+                    Copy number
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
           {data.length === 0 && (
-            <tr><td colSpan={6} className="p-6 text-center text-gray-500">No numbers found</td></tr>
+            <tr><td colSpan={7} className="p-6 text-center text-gray-500">No numbers found</td></tr>
           )}
         </tbody>
       </table>

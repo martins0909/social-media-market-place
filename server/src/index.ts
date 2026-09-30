@@ -256,6 +256,26 @@ async function start() {
       console.error("Error details:", error.message);
       process.exit(1);
     });
+
+    // Periodic job: mark expired number activations as failed and rentals as expired
+    setInterval(async () => {
+      try {
+        const now = new Date();
+        const activationsResult = await NumberActivation.updateMany(
+          { status: "waiting", expiresAt: { $lt: now } },
+          { status: "failed" }
+        ).exec();
+        const rentalsResult = await NumberRental.updateMany(
+          { status: "active", expiresAt: { $lt: now } },
+          { status: "expired" }
+        ).exec();
+        if (activationsResult.modifiedCount > 0 || rentalsResult.modifiedCount > 0) {
+          console.log(`Expired numbers cleanup: ${activationsResult.modifiedCount} activations failed, ${rentalsResult.modifiedCount} rentals expired`);
+        }
+      } catch (err) {
+        console.error("Expired numbers cleanup error:", err);
+      }
+    }, 60_000);
   } catch (err) {
     console.error("Failed to connect to MongoDB:", err);
     process.exit(1);
@@ -1636,17 +1656,45 @@ app.get("/api/numbers/activations/status/:activationId", async (req: Request, re
 
 // Update activation status (cancel/complete)
 app.patch("/api/numbers/activations/:activationId", async (req: Request, res: Response) => {
+  const session = await mongoose.startSession();
   try {
     const { activationId } = req.params;
-    const { status } = req.body; // cancel | complete
+    const { status, userId } = req.body; // cancel | complete
     if (!status) return res.status(400).json({ error: "status is required" });
 
+    const activation = await NumberActivation.findOne({ activationId }).lean();
+    if (!activation) return res.status(404).json({ error: "Activation not found" });
+
     const bloomResp = await bloomRequest("PATCH", `/activations/${activationId}`, { status });
-    await NumberActivation.updateOne({ activationId }, { status: status === "cancel" ? "cancelled" : "completed" }).exec();
-    res.json(bloomResp);
+    const newStatus = status === "cancel" ? "cancelled" : "completed";
+
+    await session.withTransaction(async () => {
+      await NumberActivation.updateOne({ activationId }, { status: newStatus }).session(session).exec();
+
+      // Refund user if cancelling and not already refunded
+      if (status === "cancel" && activation.status !== "cancelled" && activation.status !== "failed") {
+        const refundUserId = userId || activation.userId;
+        await User.updateOne({ _id: refundUserId }, { $inc: { balance: activation.priceNgn } }).session(session).exec();
+        await new NumberTransaction({
+          userId: activation.userId,
+          email: activation.email,
+          provider: "bloom",
+          reference: generateReference("REF"),
+          amount: activation.priceNgn,
+          type: "refund",
+          method: "wallet",
+          status: "completed",
+          activationId,
+        }).save({ session });
+      }
+    });
+
+    res.json({ ...bloomResp, refunded: status === "cancel", newStatus });
   } catch (err: any) {
     console.error("Update activation error:", err.response?.data || err.message);
     res.status(500).json({ error: "Failed to update activation", details: err.response?.data || err.message });
+  } finally {
+    session.endSession();
   }
 });
 
@@ -1744,14 +1792,46 @@ app.get("/api/numbers/rentals/:userId", async (req: Request, res: Response) => {
 
 // Cancel rental
 app.post("/api/numbers/rentals/:rentalId/cancel", async (req: Request, res: Response) => {
+  const session = await mongoose.startSession();
   try {
     const { rentalId } = req.params;
+    const { userId } = req.body;
+
+    const rental = await NumberRental.findOne({ rentalId }).lean();
+    if (!rental) return res.status(404).json({ error: "Rental not found" });
+
     const bloomResp = await bloomRequest("POST", `/long-rentals/${rentalId}/cancel`);
-    await NumberRental.updateOne({ rentalId }, { status: "cancelled" }).exec();
-    res.json(bloomResp);
+    const refundUsd = Number(bloomResp?.data?.refund_amount) || 0;
+    const settings = await ensureSettings();
+    const refundNgn = refundUsd > 0 ? Math.floor(refundUsd * settings.exchangeRate) : rental.priceNgn;
+
+    await session.withTransaction(async () => {
+      await NumberRental.updateOne({ rentalId }, { status: "cancelled" }).session(session).exec();
+
+      // Refund user if cancellation succeeded and not already refunded
+      if (bloomResp?.status === "success" && rental.status !== "cancelled") {
+        const refundUserId = userId || rental.userId;
+        await User.updateOne({ _id: refundUserId }, { $inc: { balance: refundNgn } }).session(session).exec();
+        await new NumberTransaction({
+          userId: rental.userId,
+          email: rental.email,
+          provider: "bloom",
+          reference: generateReference("REF"),
+          amount: refundNgn,
+          type: "refund",
+          method: "wallet",
+          status: "completed",
+          rentalId,
+        }).save({ session });
+      }
+    });
+
+    res.json({ ...bloomResp, refunded: bloomResp?.status === "success", refundNgn });
   } catch (err: any) {
     console.error("Cancel rental error:", err.response?.data || err.message);
     res.status(500).json({ error: "Failed to cancel rental", details: err.response?.data || err.message });
+  } finally {
+    session.endSession();
   }
 });
 
@@ -2108,17 +2188,46 @@ app.get("/api/numbers/daisy/activations/status/:activationId", async (req: Reque
 
 // Update DaisySMS activation status (done=6 or cancel=8)
 app.patch("/api/numbers/daisy/activations/:activationId", async (req: Request, res: Response) => {
+  const session = await mongoose.startSession();
   try {
     const { activationId } = req.params;
-    const { status } = req.body; // 6 = done, 8 = cancel
+    const { status, userId } = req.body; // 6 = done, 8 = cancel
     if (!status) return res.status(400).json({ error: "status is required" });
+
+    const activation = await NumberActivation.findOne({ activationId, provider: "daisy" }).lean();
+    if (!activation) return res.status(404).json({ error: "Activation not found" });
+
     const text = await daisyRequest("setStatus", { id: activationId, status });
     const localStatus = status === "8" ? "cancelled" : "completed";
-    await NumberActivation.updateOne({ activationId, provider: "daisy" }, { status: localStatus }).exec();
-    res.json({ status: "success", data: text });
+    const cancelled = status === "8" && text.startsWith("ACCESS_CANCEL");
+
+    await session.withTransaction(async () => {
+      await NumberActivation.updateOne({ activationId, provider: "daisy" }, { status: localStatus }).session(session).exec();
+
+      // Refund user if cancellation was accepted by provider and not already refunded
+      if (cancelled && activation.status !== "cancelled" && activation.status !== "failed") {
+        const refundUserId = userId || activation.userId;
+        await User.updateOne({ _id: refundUserId }, { $inc: { balance: activation.priceNgn } }).session(session).exec();
+        await new NumberTransaction({
+          userId: activation.userId,
+          email: activation.email,
+          provider: "daisy",
+          reference: generateReference("REF"),
+          amount: activation.priceNgn,
+          type: "refund",
+          method: "wallet",
+          status: "completed",
+          activationId,
+        }).save({ session });
+      }
+    });
+
+    res.json({ status: "success", data: text, refunded: cancelled, newStatus: localStatus });
   } catch (err: any) {
     console.error("DaisySMS update error:", err.response?.data || err.message);
     res.status(500).json({ error: "Failed to update activation", details: err.response?.data || err.message });
+  } finally {
+    session.endSession();
   }
 });
 

@@ -51,7 +51,7 @@ interface Activation {
   serviceName?: string;
   countryName?: string;
   priceNgn: number;
-  status: "waiting" | "code_received" | "completed" | "cancelled";
+  status: "waiting" | "code_received" | "completed" | "cancelled" | "failed";
   smsCode?: string;
   smsText?: string;
   expiresAt?: string;
@@ -247,6 +247,74 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
       };
     }
   }, [pollingId, isBloom]);
+
+  const handleCancelActivation = async (activation: Activation) => {
+    if (!isLoggedIn) {
+      toast.error("Please sign in");
+      return;
+    }
+    try {
+      setLoading(true);
+      const endpoint =
+        activation.provider === "bloom"
+          ? `/api/numbers/activations/${activation.activationId}`
+          : `/api/numbers/daisy/activations/${activation.activationId}`;
+      const body: any = { userId: user!.id };
+      if (activation.provider === "bloom") {
+        body.status = "cancel";
+      } else {
+        body.status = "8";
+      }
+      const res = await apiFetch(endpoint, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok || res.status === "success" || res.refunded) {
+        toast.success(res.refunded ? "Cancelled and refunded" : "Cancelled");
+        setActivations((prev) =>
+          prev.map((a) =>
+            a.activationId === activation.activationId ? { ...a, status: "cancelled" } : a
+          )
+        );
+        if (res.refunded && onBalanceChange) {
+          fetchUserData();
+        }
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to cancel");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelRental = async (rental: Rental) => {
+    if (!isLoggedIn) {
+      toast.error("Please sign in");
+      return;
+    }
+    try {
+      setLoading(true);
+      const res = await apiFetch(`/api/numbers/rentals/${rental.rentalId}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user!.id }),
+      });
+      if (res.ok || res.status === "success" || res.refunded) {
+        toast.success(res.refunded ? "Rental cancelled and refunded" : "Rental cancelled");
+        setRentals((prev) =>
+          prev.map((r) => (r.rentalId === rental.rentalId ? { ...r, status: "cancelled" } : r))
+        );
+        if (res.refunded && onBalanceChange) {
+          fetchUserData();
+        }
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to cancel rental");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleRent = async (service: Service) => {
     if (!isLoggedIn) {
@@ -567,50 +635,75 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
     );
   };
 
+  const getActivationStatusDisplay = (status: Activation["status"], smsCode?: string) => {
+    if (smsCode && (status === "code_received" || status === "completed")) {
+      return { label: "Successful", className: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" };
+    }
+    switch (status) {
+      case "waiting":
+        return { label: "Pending", className: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300" };
+      case "code_received":
+        return { label: "Successful", className: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" };
+      case "completed":
+        return { label: "Successful", className: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" };
+      case "cancelled":
+        return { label: "Cancelled", className: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" };
+      case "failed":
+        return { label: "Failed", className: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300" };
+      default:
+        return { label: status.replace("_", " "), className: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" };
+    }
+  };
+
   const renderMyNumbers = () => (
     <div className="animate-in fade-in duration-300">
       {renderHeader("My Numbers", "home")}
       <div className="space-y-3 pb-20">
-        {activations.map((a) => (
-          <div key={a._id || a.activationId} className="rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-4">
+        {activations.map((a) => {
+          const statusDisplay = getActivationStatusDisplay(a.status, a.smsCode);
+          const canCancel = a.status === "waiting";
+          return (
+            <div key={a._id || a.activationId} className="rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-4">
               <div className="flex items-center justify-between mb-2">
                 <div className="font-bold text-gray-900 dark:text-white">{a.phoneNumber}</div>
-                <div className="flex items-center gap-2">
-                  <span
-                  className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                    a.status === "code_received"
-                      ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
-                      : a.status === "waiting"
-                      ? "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
-                      : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                  }`}
-                >
-                  {a.status.replace("_", " ")}
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusDisplay.className}`}>
+                  {statusDisplay.label}
                 </span>
               </div>
-            </div>
-            <div className="text-xs text-gray-500 mb-3">{a.serviceName} · {a.countryName || ""} · Expires {formatDate(a.expiresAt)}</div>
-            {a.smsCode ? (
-              <div className="flex items-center justify-between rounded-lg bg-green-50 dark:bg-green-950/30 p-3 border border-green-200 dark:border-green-900">
-                <div>
-                  <div className="text-xs text-green-700 dark:text-green-400 font-semibold">OTP Code</div>
-                  <div className="text-lg font-mono font-bold text-green-800 dark:text-green-300">{a.smsCode}</div>
+              <div className="text-xs text-gray-500 mb-3">{a.serviceName} · {a.countryName || ""} · Expires {formatDate(a.expiresAt)}</div>
+              {a.smsCode ? (
+                <div className="flex items-center justify-between rounded-lg bg-green-50 dark:bg-green-950/30 p-3 border border-green-200 dark:border-green-900">
+                  <div>
+                    <div className="text-xs text-green-700 dark:text-green-400 font-semibold">OTP Code</div>
+                    <div className="text-lg font-mono font-bold text-green-800 dark:text-green-300">{a.smsCode}</div>
+                  </div>
+                  <button
+                    onClick={() => copyCode(a.smsCode!)}
+                    className="p-2 rounded-lg bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300"
+                  >
+                    <Copy className="h-4 w-4" />
+                  </button>
                 </div>
-                <button
-                  onClick={() => copyCode(a.smsCode!)}
-                  className="p-2 rounded-lg bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300"
-                >
-                  <Copy className="h-4 w-4" />
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 text-sm">
-                <Clock className="h-4 w-4 animate-pulse" />
-                Waiting for SMS...
-              </div>
-            )}
-          </div>
-        ))}
+              ) : (
+                <div className="flex items-center justify-between rounded-lg bg-amber-50 dark:bg-amber-950/30 p-3 border border-amber-200 dark:border-amber-900">
+                  <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 text-sm">
+                    <Clock className="h-4 w-4 animate-pulse" />
+                    Waiting for SMS...
+                  </div>
+                  {canCancel && (
+                    <button
+                      onClick={() => handleCancelActivation(a)}
+                      disabled={loading}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 font-medium"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
         {activations.length === 0 && (
           <div className="text-center py-10 text-gray-500 dark:text-gray-400">
             No active numbers. Rent one to get started.
@@ -658,7 +751,18 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
               </span>
             </div>
             <div className="text-xs text-gray-500 mb-2">{r.serviceName} · {r.period} · Expires {formatDate(r.expiresAt)}</div>
-            <div className="text-sm font-medium text-[#1565C0]">₦{r.priceNgn.toLocaleString()}</div>
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium text-[#1565C0]">₦{r.priceNgn.toLocaleString()}</div>
+              {r.status === "active" && (
+                <button
+                  onClick={() => handleCancelRental(r)}
+                  disabled={loading}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 font-medium"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
           </div>
         ))}
         {rentals.length === 0 && (
