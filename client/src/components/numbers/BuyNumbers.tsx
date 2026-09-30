@@ -16,6 +16,7 @@ import {
   X,
   Loader2,
   ChevronRight,
+  RefreshCw,
 } from "lucide-react";
 
 interface BuyNumbersProps {
@@ -98,7 +99,6 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
   const [activations, setActivations] = useState<Activation[]>([]);
   const [rentals, setRentals] = useState<Rental[]>([]);
   const [transactions, setTransactions] = useState<NumberTransaction[]>([]);
-  const [pollingId, setPollingId] = useState<string | null>(null);
   const pollTimer = useRef<NodeJS.Timeout | null>(null);
 
   const isLoggedIn = !!user?.id;
@@ -187,6 +187,38 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
     }
   };
 
+  const refreshCodes = async () => {
+    if (!user?.id) return;
+    try {
+      setLoading(true);
+      const acts = await apiFetch(`/api/numbers/activations/${user.id}?provider=${provider}`);
+      if (Array.isArray(acts)) {
+        setActivations(acts);
+        const waiting = acts.filter((a: Activation) => a.status === "waiting");
+        for (const a of waiting) {
+          try {
+            if (a.provider === "bloom") {
+              await apiFetch(`/api/numbers/activations/status/${a.activationId}`);
+            } else {
+              await apiFetch(`/api/numbers/daisy/activations/status/${a.activationId}`);
+            }
+          } catch (e) {
+            console.error(`Refresh status error for ${a.activationId}:`, e);
+          }
+        }
+        if (waiting.length > 0) {
+          const updated = await apiFetch(`/api/numbers/activations/${user.id}?provider=${provider}`);
+          if (Array.isArray(updated)) setActivations(updated);
+        }
+      }
+      toast.success("Refreshed");
+    } catch (e: any) {
+      toast.error(e.message || "Failed to refresh");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (isBloom) fetchBloomCountries();
     else fetchDaisyServices();
@@ -212,41 +244,59 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
     }
   }, [view, selectedCountry, provider, daisyAllServices]);
 
+  // Poll all waiting activations every 4 seconds while on My Numbers
   useEffect(() => {
-    if (pollingId) {
-      pollTimer.current = setInterval(async () => {
-        try {
-          let local;
-          if (isBloom) {
-            const res = await apiFetch(`/api/numbers/activations/status/${pollingId}`);
-            local = res?.local;
-          } else {
-            const res = await apiFetch(`/api/numbers/daisy/activations/status/${pollingId}`);
-            const text = res?.data;
-            if (text && text.startsWith("STATUS_OK")) {
-              const code = text.split(":")[1];
-              local = { smsCode: code };
-              setActivations((prev) =>
-                prev.map((a) =>
-                  a.activationId === pollingId ? { ...a, smsCode: code, status: "code_received" } : a
-                )
-              );
+    if (view !== "my-numbers" || !user?.id) {
+      if (pollTimer.current) clearInterval(pollTimer.current);
+      return;
+    }
+
+    const pollWaitingActivations = async () => {
+      try {
+        // Refresh activations list first
+        const acts = await apiFetch(`/api/numbers/activations/${user.id}?provider=${provider}`);
+        if (Array.isArray(acts)) {
+          setActivations(acts);
+          const waiting = acts.filter((a: Activation) => a.status === "waiting");
+
+          // Poll provider status for each waiting activation
+          for (const a of waiting) {
+            try {
+              if (a.provider === "bloom") {
+                await apiFetch(`/api/numbers/activations/status/${a.activationId}`);
+              } else {
+                await apiFetch(`/api/numbers/daisy/activations/status/${a.activationId}`);
+              }
+            } catch (e) {
+              console.error(`Status poll error for ${a.activationId}:`, e);
             }
           }
-          if (local?.smsCode) {
-            toast.success(`Code received: ${local.smsCode}`);
-            setPollingId(null);
-            fetchUserData();
+
+          // Refresh again after polling providers
+          if (waiting.length > 0) {
+            const updated = await apiFetch(`/api/numbers/activations/${user.id}?provider=${provider}`);
+            if (Array.isArray(updated)) {
+              setActivations(updated);
+              const newlyReceived = updated.find((a: Activation) =>
+                acts.some((old: Activation) => old.activationId === a.activationId && !old.smsCode && a.smsCode)
+              );
+              if (newlyReceived?.smsCode) {
+                toast.success(`Code received: ${newlyReceived.smsCode}`);
+              }
+            }
           }
-        } catch (e) {
-          console.error("Polling error", e);
         }
-      }, 4000);
-      return () => {
-        if (pollTimer.current) clearInterval(pollTimer.current);
-      };
-    }
-  }, [pollingId, isBloom]);
+      } catch (e) {
+        console.error("Polling error", e);
+      }
+    };
+
+    pollWaitingActivations();
+    pollTimer.current = setInterval(pollWaitingActivations, 4000);
+    return () => {
+      if (pollTimer.current) clearInterval(pollTimer.current);
+    };
+  }, [view, provider, user?.id]);
 
   const handleCancelActivation = async (activation: Activation) => {
     if (!isLoggedIn) {
@@ -365,7 +415,6 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
           ...prev,
         ]);
         if (onBalanceChange) onBalanceChange(res.newBalance);
-        setPollingId(res.activation.activationId);
         setView("my-numbers");
       }
     } catch (err: any) {
@@ -658,6 +707,19 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
   const renderMyNumbers = () => (
     <div className="animate-in fade-in duration-300">
       {renderHeader("My Numbers", "home")}
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          Codes appear automatically when SMS arrives. Pull down or tap refresh.
+        </p>
+        <button
+          onClick={refreshCodes}
+          disabled={loading}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1565C0] text-white text-xs font-semibold disabled:opacity-50"
+        >
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          Refresh
+        </button>
+      </div>
       <div className="space-y-3 pb-20">
         {activations.map((a) => {
           const statusDisplay = getActivationStatusDisplay(a.status, a.smsCode);
