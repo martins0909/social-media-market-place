@@ -36,7 +36,7 @@ const corsOptions: CorsOptions = {
     }
     callback(new Error("Origin not allowed by CORS"));
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
 };
@@ -1666,13 +1666,25 @@ app.patch("/api/numbers/activations/:activationId", async (req: Request, res: Re
     if (!activation) return res.status(404).json({ error: "Activation not found" });
 
     const bloomResp = await bloomRequest("PATCH", `/activations/${activationId}`, { status });
+
+    // Bloom returns { status: "success" | "error", data, errors }
+    const providerSuccess = bloomResp?.status === "success";
     const newStatus = status === "cancel" ? "cancelled" : "completed";
+    const shouldRefund = status === "cancel" && providerSuccess;
+
+    if (!providerSuccess) {
+      // Provider rejected the request — do not refund, do not change status
+      return res.status(502).json({
+        error: "Provider rejected the request",
+        details: bloomResp?.errors || bloomResp,
+      });
+    }
 
     await session.withTransaction(async () => {
       await NumberActivation.updateOne({ activationId }, { status: newStatus }).session(session).exec();
 
-      // Refund user if cancelling and not already refunded
-      if (status === "cancel" && activation.status !== "cancelled" && activation.status !== "failed") {
+      // Refund user if cancellation was accepted by Bloom and not already refunded
+      if (shouldRefund && activation.status !== "cancelled" && activation.status !== "failed") {
         const refundUserId = userId || activation.userId;
         await User.updateOne({ _id: refundUserId }, { $inc: { balance: activation.priceNgn } }).session(session).exec();
         await new NumberTransaction({
@@ -1689,7 +1701,7 @@ app.patch("/api/numbers/activations/:activationId", async (req: Request, res: Re
       }
     });
 
-    res.json({ ...bloomResp, refunded: status === "cancel", newStatus });
+    res.json({ ...bloomResp, refunded: shouldRefund, newStatus });
   } catch (err: any) {
     console.error("Update activation error:", err.response?.data || err.message);
     res.status(500).json({ error: "Failed to update activation", details: err.response?.data || err.message });
@@ -2200,11 +2212,17 @@ app.patch("/api/numbers/daisy/activations/:activationId", async (req: Request, r
     const text = await daisyRequest("setStatus", { id: activationId, status });
     const localStatus = status === "8" ? "cancelled" : "completed";
     const cancelled = status === "8" && text.startsWith("ACCESS_CANCEL");
+    const alreadyDone = text.startsWith("ACCESS_READY") || text.startsWith("NO_ACTIVATION");
+
+    if (status === "8" && !cancelled && !alreadyDone) {
+      // Unexpected response — do not refund
+      return res.status(502).json({ error: "Provider rejected cancellation", details: text });
+    }
 
     await session.withTransaction(async () => {
       await NumberActivation.updateOne({ activationId, provider: "daisy" }, { status: localStatus }).session(session).exec();
 
-      // Refund user if cancellation was accepted by provider and not already refunded
+      // Refund user if cancellation was accepted by Daisy and not already refunded
       if (cancelled && activation.status !== "cancelled" && activation.status !== "failed") {
         const refundUserId = userId || activation.userId;
         await User.updateOne({ _id: refundUserId }, { $inc: { balance: activation.priceNgn } }).session(session).exec();
