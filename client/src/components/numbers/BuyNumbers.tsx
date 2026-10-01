@@ -94,6 +94,7 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
   const [daisyCountries, setDaisyCountries] = useState<Country[]>([]);
   const [daisyAllServices, setDaisyAllServices] = useState<Service[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [servicesError, setServicesError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [activations, setActivations] = useState<Activation[]>([]);
@@ -111,7 +112,10 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
         setCountries(res.data.countries);
       }
     } catch (e: any) {
-      toast.error(e.message || "Failed to load countries");
+      const detailMsg = e.providerError ? `Provider: ${e.providerError}` : e.details ? e.details : "";
+      const fullMsg = detailMsg ? `${e.message}. ${detailMsg}` : e.message;
+      setServicesError(fullMsg || "Failed to load services");
+      toast.error(fullMsg || "Failed to load services");
     } finally {
       setLoading(false);
     }
@@ -120,12 +124,16 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
   const fetchBloomServices = async (countryId: string) => {
     try {
       setLoading(true);
+      setServicesError(null);
       const res = await apiFetch(`/api/numbers/services?country=${countryId}`);
       if (res?.status === "success" && Array.isArray(res.data?.services)) {
         setServices(res.data.services);
       }
     } catch (e: any) {
-      toast.error(e.message || "Failed to load services");
+      const detailMsg = e.providerError ? `Provider: ${e.providerError}` : e.details ? e.details : "";
+      const fullMsg = detailMsg ? `${e.message}. ${detailMsg}` : e.message;
+      setServicesError(fullMsg || "Failed to load services");
+      toast.error(fullMsg || "Failed to load services");
     } finally {
       setLoading(false);
     }
@@ -134,6 +142,7 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
   const fetchDaisyServices = async () => {
     try {
       setLoading(true);
+      setServicesError(null);
       const res = await apiFetch("/api/numbers/daisy/services");
       const data = res?.data;
       const mapped: Service[] = [];
@@ -625,7 +634,16 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
             </div>
           ))}
           {filteredServices.length === 0 && !loading && (
-            <div className="text-center py-10 text-gray-500 dark:text-gray-400">No services found</div>
+            <div className="text-center py-10">
+              {servicesError ? (
+                <div className="rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 p-4 text-red-700 dark:text-red-300 text-sm">
+                  <p className="font-semibold mb-1">Could not load services</p>
+                  <p className="break-words">{servicesError}</p>
+                </div>
+              ) : (
+                <div className="text-gray-500 dark:text-gray-400">No services found</div>
+              )}
+            </div>
           )}
         </div>
       )}

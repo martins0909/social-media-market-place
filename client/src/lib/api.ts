@@ -9,14 +9,21 @@ export async function apiFetch(path: string, opts: RequestInit = {}) {
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     let message = text || `Request failed: ${res.status}`;
+    let parsed: any = null;
     try {
-      const parsed = JSON.parse(text);
+      parsed = JSON.parse(text);
       if (parsed.error) message = parsed.error;
       else if (parsed.message) message = parsed.message;
     } catch {
       // not JSON, keep raw text
     }
-    throw new Error(message);
+    const err = new Error(message) as any;
+    err.status = res.status;
+    err.raw = text;
+    err.details = parsed?.details;
+    err.providerStatus = parsed?.providerStatus;
+    err.providerError = parsed?.providerError;
+    throw err;
   }
   if (!isJson) {
     const text = await res.text().catch(() => "");

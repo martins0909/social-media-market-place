@@ -2102,11 +2102,17 @@ app.get("/api/numbers/daisy/services", async (req: Request, res: Response) => {
     res.json({ status: "success", data: normalized });
   } catch (err: any) {
     console.error("Number services error:", err.response?.data || err.message);
+    const status = err.response?.status;
     const details = err.response?.data || err.message || String(err);
     const isHtml = typeof details === "string" && (details.trim().startsWith("<") || details.includes("<html"));
+    let message = "Failed to load services. Please try again.";
+    if (status === 403) message = "Provider access denied (403). Your API key may be invalid or the server IP is blocked.";
+    else if (status === 401) message = "Provider authentication failed. Please check your API key.";
+    else if (status === 429) message = "Too many requests to provider. Please wait a moment.";
     res.status(502).json({
-      error: "Failed to load services. Please try again.",
-      details: isHtml ? "Provider temporarily unavailable." : details,
+      error: message,
+      providerStatus: status,
+      providerError: isHtml ? "Provider returned an HTML page (likely a block)." : details,
     });
   }
 });
@@ -2115,22 +2121,37 @@ app.get("/api/numbers/daisy/services", async (req: Request, res: Response) => {
 app.get("/api/numbers/daisy/debug", async (req: Request, res: Response) => {
   try {
     if (!DAISYSMS_API_KEY) {
-      return res.status(503).json({ error: "DaisySMS API key is not configured" });
+      return res.status(503).json({ error: "Number provider API key is not configured" });
     }
+
+    const testEndpoint = async (action: string) => {
+      try {
+        const text = await daisyRequest(action);
+        return { ok: true, status: 200, body: text.substring(0, 2000) };
+      } catch (e: any) {
+        return {
+          ok: false,
+          status: e.response?.status || 0,
+          error: e.message,
+          body: e.response?.data ? String(e.response.data).substring(0, 2000) : undefined,
+        };
+      }
+    };
+
     const [balance, verification, prices] = await Promise.all([
-      daisyRequest("getBalance").catch((e) => String(e.message)),
-      daisyRequest("getPricesVerification").catch((e) => String(e.message)),
-      daisyRequest("getPrices").catch((e) => String(e.message)),
+      testEndpoint("getBalance"),
+      testEndpoint("getPricesVerification"),
+      testEndpoint("getPrices"),
     ]);
+
     res.json({
       apiKeyConfigured: true,
       apiKeyPrefix: DAISYSMS_API_KEY.substring(0, 8) + "...",
-      balance,
-      getPricesVerification: verification,
-      getPrices: prices,
+      timestamp: new Date().toISOString(),
+      endpoints: { getBalance: balance, getPricesVerification: verification, getPrices: prices },
     });
   } catch (err: any) {
-    console.error("DaisySMS debug error:", err);
+    console.error("Debug error:", err);
     res.status(500).json({ error: "Debug failed", details: err.message });
   }
 });
@@ -2217,11 +2238,17 @@ app.post("/api/numbers/daisy/activations", async (req: Request, res: Response) =
     });
   } catch (err: any) {
     console.error("Rent number error:", err.response?.data || err.message);
+    const status = err.response?.status;
     const details = err.response?.data || err.message || String(err);
     const isHtml = typeof details === "string" && (details.trim().startsWith("<") || details.includes("<html"));
+    let message = "Failed to rent number. Please try again.";
+    if (status === 403) message = "Provider access denied (403). Your API key may be invalid or the server IP is blocked.";
+    else if (status === 401) message = "Provider authentication failed. Please check your API key.";
+    else if (status === 429) message = "Too many requests to provider. Please wait a moment.";
     res.status(500).json({
-      error: "Failed to rent number. Please try again.",
-      details: isHtml ? "Provider temporarily unavailable." : details,
+      error: message,
+      providerStatus: status,
+      providerError: isHtml ? "Provider returned an HTML page (likely a block)." : details,
     });
   } finally {
     session.endSession();
