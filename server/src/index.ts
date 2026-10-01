@@ -1447,7 +1447,7 @@ function calculateNgnPrice(usd: number, exchangeRate: number, markupPercentage: 
 
 async function bloomRequest(method: string, path: string, body?: any) {
   if (!BLOOMSMS_API_KEY) {
-    throw new Error("BloomSMS API key is not configured");
+    throw new Error("Number provider API key is not configured");
   }
   const url = `${BLOOMSMS_BASE}${path}`;
   const res = await axios({
@@ -1500,8 +1500,8 @@ app.get("/api/numbers/countries", async (req: Request, res: Response) => {
     const data = await bloomRequest("GET", "/countries");
     res.json(data);
   } catch (err: any) {
-    console.error("BloomSMS countries error:", err.response?.data || err.message);
-    res.status(502).json({ error: "Failed to fetch countries", details: err.response?.data || err.message });
+    console.error("Countries error:", err.response?.data || err.message);
+    res.status(502).json({ error: "Failed to load countries", details: err.response?.data || err.message });
   }
 });
 
@@ -1519,8 +1519,8 @@ app.get("/api/numbers/services", async (req: Request, res: Response) => {
     }
     res.json(data);
   } catch (err: any) {
-    console.error("BloomSMS services error:", err.response?.data || err.message);
-    res.status(502).json({ error: "Failed to fetch services", details: err.response?.data || err.message });
+    console.error("Services error:", err.response?.data || err.message);
+    res.status(502).json({ error: "Failed to load services", details: err.response?.data || err.message });
   }
 });
 
@@ -1553,7 +1553,7 @@ app.post("/api/numbers/activations", async (req: Request, res: Response) => {
     // Create activation with BloomSMS
     const bloomResp = await bloomRequest("POST", "/activations", { service, country });
     if (bloomResp?.status !== "success" || !bloomResp.data) {
-      return res.status(502).json({ error: "Failed to rent number from provider", details: bloomResp });
+      return res.status(502).json({ error: "Failed to rent number. Provider may be out of stock.", details: bloomResp?.errors || bloomResp });
     }
 
     const bloom = bloomResp.data;
@@ -1607,7 +1607,12 @@ app.post("/api/numbers/activations", async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error("Rent number error:", err.response?.data || err.message);
-    res.status(500).json({ error: "Failed to rent number", details: err.response?.data || err.message });
+    const details = err.response?.data || err.message || String(err);
+    const isHtml = typeof details === "string" && (details.trim().startsWith("<") || details.includes("<html"));
+    res.status(500).json({
+      error: "Failed to rent number. Please try again.",
+      details: isHtml ? "Provider temporarily unavailable." : details,
+    });
   } finally {
     session.endSession();
   }
@@ -1650,7 +1655,7 @@ app.get("/api/numbers/activations/status/:activationId", async (req: Request, re
     res.json({ ...bloomResp, local: activation });
   } catch (err: any) {
     console.error("Activation status error:", err.response?.data || err.message);
-    res.status(500).json({ error: "Failed to fetch status", details: err.response?.data || err.message });
+    res.status(500).json({ error: "Failed to check status", details: err.response?.data || err.message });
   }
 });
 
@@ -1704,7 +1709,7 @@ app.patch("/api/numbers/activations/:activationId", async (req: Request, res: Re
     res.json({ ...bloomResp, refunded: shouldRefund, newStatus });
   } catch (err: any) {
     console.error("Update activation error:", err.response?.data || err.message);
-    res.status(500).json({ error: "Failed to update activation", details: err.response?.data || err.message });
+    res.status(500).json({ error: "Failed to cancel activation", details: err.response?.data || err.message });
   } finally {
     session.endSession();
   }
@@ -1954,6 +1959,16 @@ async function daisyRequest(action: string, params: Record<string, string | numb
   return String(res.data || "").trim();
 }
 
+async function daisyRequestRaw(action: string, params: Record<string, string | number | boolean> = {}) {
+  if (!DAISYSMS_API_KEY) {
+    throw new Error("DaisySMS API key is not configured");
+  }
+  const query = new URLSearchParams({ api_key: DAISYSMS_API_KEY, action, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])) });
+  const url = `${DAISYSMS_BASE}?${query.toString()}`;
+  const res = await axios.get(url, { timeout: 20000, responseType: "text" });
+  return { text: String(res.data || "").trim(), headers: res.headers };
+}
+
 // Proxy: DaisySMS services/prices
 app.get("/api/numbers/daisy/services", async (req: Request, res: Response) => {
   try {
@@ -2038,17 +2053,22 @@ app.get("/api/numbers/daisy/services", async (req: Request, res: Response) => {
     }
 
     if (!text || text.startsWith("BAD_KEY")) {
-      return res.status(502).json({ error: "DaisySMS API key is invalid", details: text });
+      return res.status(502).json({ error: "API key is invalid", details: text });
     }
     if (text.startsWith("NO") || text.startsWith("ERROR")) {
-      return res.status(502).json({ error: "DaisySMS returned an error", details: text });
+      return res.status(502).json({ error: "Provider returned an error", details: text });
     }
 
     let parsed: any = {};
     try {
       parsed = JSON.parse(text);
     } catch {
-      return res.status(502).json({ error: "Invalid JSON response from DaisySMS", details: text });
+      // Likely a Cloudflare challenge or HTML error page
+      const isHtml = text.trim().startsWith("<") || text.includes("<html");
+      return res.status(502).json({
+        error: isHtml ? "Provider is temporarily blocked. Please try again in a moment." : "Invalid response from provider",
+        details: isHtml ? undefined : text,
+      });
     }
 
     const normalized = normalizePrices(parsed);
@@ -2063,8 +2083,13 @@ app.get("/api/numbers/daisy/services", async (req: Request, res: Response) => {
 
     res.json({ status: "success", data: normalized });
   } catch (err: any) {
-    console.error("DaisySMS services error:", err.response?.data || err.message);
-    res.status(502).json({ error: "Failed to fetch DaisySMS services", details: err.response?.data || err.message });
+    console.error("Number services error:", err.response?.data || err.message);
+    const details = err.response?.data || err.message || String(err);
+    const isHtml = typeof details === "string" && (details.trim().startsWith("<") || details.includes("<html"));
+    res.status(502).json({
+      error: "Failed to load services. Please try again.",
+      details: isHtml ? "Provider temporarily unavailable." : details,
+    });
   }
 });
 
@@ -2096,7 +2121,7 @@ app.get("/api/numbers/daisy/debug", async (req: Request, res: Response) => {
 app.post("/api/numbers/daisy/activations", async (req: Request, res: Response) => {
   const session = await mongoose.startSession();
   try {
-    const { userId, service, serviceName, maxPrice = 5.5 } = req.body;
+    const { userId, service, serviceName, maxPrice = 10 } = req.body;
     if (!userId || !service) {
       return res.status(400).json({ error: "userId and service are required" });
     }
@@ -2104,21 +2129,28 @@ app.post("/api/numbers/daisy/activations", async (req: Request, res: Response) =
     if (!user) return res.status(404).json({ error: "User not found" });
 
     const settings = await ensureSettings();
-    const priceUsd = Number(maxPrice);
+
+    // Rent from provider with a high max_price ceiling so we can read the actual X-Price header
+    const raw = await daisyRequestRaw("getNumber", { service, max_price: Number(maxPrice) });
+    const text = raw.text;
+
+    // Expected: ACCESS_NUMBER:id:phone
+    if (!text.startsWith("ACCESS_NUMBER")) {
+      return res.status(502).json({ error: "Failed to rent number. Provider may be out of stock or the price exceeded the allowed limit.", details: text });
+    }
+
+    const parts = text.split(":");
+    const activationId = parts[1];
+    const phoneNumber = parts[2];
+
+    // Daisy returns the effective price in the X-Price header (fallback to maxPrice if missing)
+    const effectiveUsd = Number(raw.headers["x-price"]) || Number(maxPrice);
+    const priceUsd = effectiveUsd;
     const priceNgn = calculateNgnPrice(priceUsd, settings.exchangeRate, settings.markupPercentage);
 
     if ((user.balance || 0) < priceNgn) {
       return res.status(400).json({ error: "Insufficient balance" });
     }
-
-    const text = await daisyRequest("getNumber", { service, max_price: priceUsd });
-    // Expected: ACCESS_NUMBER:id:phone
-    if (!text.startsWith("ACCESS_NUMBER")) {
-      return res.status(502).json({ error: "Failed to rent number from DaisySMS", details: text });
-    }
-    const parts = text.split(":");
-    const activationId = parts[1];
-    const phoneNumber = parts[2];
 
     await session.withTransaction(async () => {
       await User.updateOne({ _id: user._id }, { $inc: { balance: -priceNgn } }).session(session).exec();
@@ -2166,8 +2198,13 @@ app.post("/api/numbers/daisy/activations", async (req: Request, res: Response) =
       });
     });
   } catch (err: any) {
-    console.error("DaisySMS rent error:", err.response?.data || err.message);
-    res.status(500).json({ error: "Failed to rent DaisySMS number", details: err.response?.data || err.message });
+    console.error("Rent number error:", err.response?.data || err.message);
+    const details = err.response?.data || err.message || String(err);
+    const isHtml = typeof details === "string" && (details.trim().startsWith("<") || details.includes("<html"));
+    res.status(500).json({
+      error: "Failed to rent number. Please try again.",
+      details: isHtml ? "Provider temporarily unavailable." : details,
+    });
   } finally {
     session.endSession();
   }
@@ -2193,7 +2230,7 @@ app.get("/api/numbers/daisy/activations/status/:activationId", async (req: Reque
     }
     res.json({ status: "success", data: statusText });
   } catch (err: any) {
-    console.error("DaisySMS status error:", err.response?.data || err.message);
+    console.error("Status error:", err.response?.data || err.message);
     res.status(500).json({ error: "Failed to fetch status", details: err.response?.data || err.message });
   }
 });
@@ -2242,8 +2279,8 @@ app.patch("/api/numbers/daisy/activations/:activationId", async (req: Request, r
 
     res.json({ status: "success", data: text, refunded: cancelled, newStatus: localStatus });
   } catch (err: any) {
-    console.error("DaisySMS update error:", err.response?.data || err.message);
-    res.status(500).json({ error: "Failed to update activation", details: err.response?.data || err.message });
+    console.error("Update activation error:", err.response?.data || err.message);
+    res.status(500).json({ error: "Failed to cancel activation", details: err.response?.data || err.message });
   } finally {
     session.endSession();
   }

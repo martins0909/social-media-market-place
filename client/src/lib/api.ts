@@ -8,7 +8,15 @@ export async function apiFetch(path: string, opts: RequestInit = {}) {
   const isJson = contentType.includes("application/json");
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(text || `Request failed: ${res.status}`);
+    let message = text || `Request failed: ${res.status}`;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed.error) message = parsed.error;
+      else if (parsed.message) message = parsed.message;
+    } catch {
+      // not JSON, keep raw text
+    }
+    throw new Error(message);
   }
   if (!isJson) {
     const text = await res.text().catch(() => "");
