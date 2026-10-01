@@ -1949,23 +1949,38 @@ app.get("/api/numbers/admin/transactions", async (req: Request, res: Response) =
 const DAISYSMS_BASE = "https://daisysms.io/stubs/handler_api.php";
 const DAISYSMS_API_KEY = process.env.DAISYSMS_API_KEY || "";
 
+const DAISY_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Accept-Encoding": "gzip, deflate, br",
+  "DNT": "1",
+  "Connection": "keep-alive",
+  "Upgrade-Insecure-Requests": "1",
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "none",
+  "Sec-Fetch-User": "?1",
+  "Cache-Control": "max-age=0",
+};
+
 async function daisyRequest(action: string, params: Record<string, string | number | boolean> = {}) {
   if (!DAISYSMS_API_KEY) {
-    throw new Error("DaisySMS API key is not configured");
+    throw new Error("Number provider API key is not configured");
   }
   const query = new URLSearchParams({ api_key: DAISYSMS_API_KEY, action, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])) });
   const url = `${DAISYSMS_BASE}?${query.toString()}`;
-  const res = await axios.get(url, { timeout: 20000, responseType: "text" });
+  const res = await axios.get(url, { timeout: 20000, responseType: "text", headers: DAISY_HEADERS });
   return String(res.data || "").trim();
 }
 
 async function daisyRequestRaw(action: string, params: Record<string, string | number | boolean> = {}) {
   if (!DAISYSMS_API_KEY) {
-    throw new Error("DaisySMS API key is not configured");
+    throw new Error("Number provider API key is not configured");
   }
   const query = new URLSearchParams({ api_key: DAISYSMS_API_KEY, action, ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])) });
   const url = `${DAISYSMS_BASE}?${query.toString()}`;
-  const res = await axios.get(url, { timeout: 20000, responseType: "text" });
+  const res = await axios.get(url, { timeout: 20000, responseType: "text", headers: DAISY_HEADERS });
   return { text: String(res.data || "").trim(), headers: res.headers };
 }
 
@@ -2043,13 +2058,16 @@ app.get("/api/numbers/daisy/services", async (req: Request, res: Response) => {
 
     // Try getPricesVerification first
     let text = await daisyRequest("getPricesVerification");
-    console.log("DaisySMS getPricesVerification raw:", text.substring(0, 1000));
+    console.log("Daisy getPricesVerification raw:", text.substring(0, 1000));
 
-    if (!text || text.startsWith("BAD_KEY") || text.startsWith("NO") || text.startsWith("ERROR") || text.startsWith("ACCESS")) {
+    const isHtmlResponse = (t: string) => !t || t.trim().startsWith("<") || t.toLowerCase().includes("<html");
+    const isProviderError = (t: string) => t.startsWith("BAD_KEY") || t.startsWith("NO") || t.startsWith("ERROR") || t.startsWith("ACCESS");
+
+    if (isHtmlResponse(text) || isProviderError(text)) {
       // Try getPrices as fallback
-      console.log("DaisySMS: getPricesVerification failed/empty, trying getPrices");
+      console.log("Daisy: getPricesVerification failed/empty/blocked, trying getPrices");
       text = await daisyRequest("getPrices");
-      console.log("DaisySMS getPrices raw:", text.substring(0, 1000));
+      console.log("Daisy getPrices raw:", text.substring(0, 1000));
     }
 
     if (!text || text.startsWith("BAD_KEY")) {
