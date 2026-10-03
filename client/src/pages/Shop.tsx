@@ -1575,14 +1575,14 @@ const Shop = () => {
                 </button>
 
                 <button
-                  onClick={() => { setNumbersProvider("daisy"); setShowBuyNumbers(true); }}
+                  onClick={openConvertDialog}
                   className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors"
                 >
-                  <div className="w-12 h-12 rounded-full bg-pink-600 flex items-center justify-center text-white shadow-lg">
-                    <Smartphone className="h-5 w-5" />
+                  <div className="w-12 h-12 rounded-full bg-teal-500 flex items-center justify-center text-white shadow-lg">
+                    <ArrowRightLeft className="h-5 w-5" />
                   </div>
-                  <span className="text-xs font-semibold text-gray-800 dark:text-gray-200">Buy USA Numbers</span>
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400 -mt-1">USA</span>
+                  <span className="text-xs font-semibold text-gray-800 dark:text-gray-200">Convert</span>
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400 -mt-1">Exchange</span>
                 </button>
 
                 <button

@@ -1417,10 +1417,12 @@ app.get("/api/payments/verify/:reference?", async (req: Request, res: Response) 
   } catch (err) {
     if (axios.isAxiosError(err)) {
       console.error("Paystack verify error:", err.response?.data ?? err.message);
-      return res.status(500).json({ error: "Verification failed", details: err.response?.data ?? err.message });
+      const { status, details } = providerErrorDetails(err);
+      return res.status(500).json({ error: "Verification failed", providerStatus: status, providerError: details });
     } else if (err instanceof Error) {
       console.error("Verify error:", err.message);
-      return res.status(500).json({ error: "Verification failed", details: err.message });
+      const { details } = providerErrorDetails({ message: err.message });
+      return res.status(500).json({ error: "Verification failed", providerError: details });
     } else {
       console.error("Unknown verify error:", err);
       return res.status(500).json({ error: "Verification failed" });
@@ -1467,6 +1469,19 @@ function generateReference(prefix = "NUM") {
   return `${prefix}_${Date.now()}_${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
 }
 
+// Sanitize provider errors so raw HTML/Cloudflare pages never reach users
+function providerErrorDetails(err: any): { status?: number; details: string } {
+  const status = err?.response?.status || 0;
+  const raw = err?.response?.data || err?.message || String(err);
+  const isHtml = typeof raw === "string" && (raw.trim().startsWith("<") || raw.toLowerCase().includes("<html"));
+  return {
+    status,
+    details: isHtml
+      ? "Provider returned an HTML page (likely a security block). Please try again."
+      : String(raw).substring(0, 1000),
+  };
+}
+
 // Settings: get
 app.get("/api/numbers/settings", async (req: Request, res: Response) => {
   try {
@@ -1501,7 +1516,8 @@ app.get("/api/numbers/countries", async (req: Request, res: Response) => {
     res.json(data);
   } catch (err: any) {
     console.error("Countries error:", err.response?.data || err.message);
-    res.status(502).json({ error: "Failed to load countries", details: err.response?.data || err.message });
+    const { status, details } = providerErrorDetails(err);
+    res.status(502).json({ error: "Failed to load countries", providerStatus: status, providerError: details });
   }
 });
 
@@ -1520,7 +1536,8 @@ app.get("/api/numbers/services", async (req: Request, res: Response) => {
     res.json(data);
   } catch (err: any) {
     console.error("Services error:", err.response?.data || err.message);
-    res.status(502).json({ error: "Failed to load services", details: err.response?.data || err.message });
+    const { status, details } = providerErrorDetails(err);
+    res.status(502).json({ error: "Failed to load services", providerStatus: status, providerError: details });
   }
 });
 
@@ -1607,12 +1624,12 @@ app.post("/api/numbers/activations", async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error("Rent number error:", err.response?.data || err.message);
-    const details = err.response?.data || err.message || String(err);
-    const isHtml = typeof details === "string" && (details.trim().startsWith("<") || details.includes("<html"));
-    res.status(500).json({
-      error: "Failed to rent number. Please try again.",
-      details: isHtml ? "Provider temporarily unavailable." : details,
-    });
+    const { status, details } = providerErrorDetails(err);
+    let message = "Failed to rent number. Please try again.";
+    if (status === 403) message = "Provider access denied (403). Your API key may be invalid or the server IP is blocked.";
+    else if (status === 401) message = "Provider authentication failed. Please check your API key.";
+    else if (status === 429) message = "Too many requests to provider. Please wait a moment.";
+    res.status(500).json({ error: message, providerStatus: status, providerError: details });
   } finally {
     session.endSession();
   }
@@ -1655,7 +1672,8 @@ app.get("/api/numbers/activations/status/:activationId", async (req: Request, re
     res.json({ ...bloomResp, local: activation });
   } catch (err: any) {
     console.error("Activation status error:", err.response?.data || err.message);
-    res.status(500).json({ error: "Failed to check status", details: err.response?.data || err.message });
+    const { status, details } = providerErrorDetails(err);
+    res.status(500).json({ error: "Failed to check status", providerStatus: status, providerError: details });
   }
 });
 
@@ -1709,7 +1727,8 @@ app.patch("/api/numbers/activations/:activationId", async (req: Request, res: Re
     res.json({ ...bloomResp, refunded: shouldRefund, newStatus });
   } catch (err: any) {
     console.error("Update activation error:", err.response?.data || err.message);
-    res.status(500).json({ error: "Failed to cancel activation", details: err.response?.data || err.message });
+    const { status, details } = providerErrorDetails(err);
+    res.status(500).json({ error: "Failed to cancel activation", providerStatus: status, providerError: details });
   } finally {
     session.endSession();
   }
@@ -1789,7 +1808,8 @@ app.post("/api/numbers/rentals", async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error("Create rental error:", err.response?.data || err.message);
-    res.status(500).json({ error: "Failed to create rental", details: err.response?.data || err.message });
+    const { status, details } = providerErrorDetails(err);
+    res.status(500).json({ error: "Failed to create rental", providerStatus: status, providerError: details });
   } finally {
     session.endSession();
   }
@@ -1846,7 +1866,8 @@ app.post("/api/numbers/rentals/:rentalId/cancel", async (req: Request, res: Resp
     res.json({ ...bloomResp, refunded: bloomResp?.status === "success", refundNgn });
   } catch (err: any) {
     console.error("Cancel rental error:", err.response?.data || err.message);
-    res.status(500).json({ error: "Failed to cancel rental", details: err.response?.data || err.message });
+    const { status, details } = providerErrorDetails(err);
+    res.status(500).json({ error: "Failed to cancel rental", providerStatus: status, providerError: details });
   } finally {
     session.endSession();
   }
@@ -2070,11 +2091,14 @@ app.get("/api/numbers/daisy/services", async (req: Request, res: Response) => {
       console.log("Daisy getPrices raw:", text.substring(0, 1000));
     }
 
+    const isHtmlText = (t: string) => !t || t.trim().startsWith("<") || t.toLowerCase().includes("<html");
+    const cleanText = (t: string) => isHtmlText(t) ? "Provider returned an HTML page (likely a security block). Please try again." : t;
+
     if (!text || text.startsWith("BAD_KEY")) {
-      return res.status(502).json({ error: "API key is invalid", details: text });
+      return res.status(502).json({ error: "API key is invalid", providerError: cleanText(text) });
     }
     if (text.startsWith("NO") || text.startsWith("ERROR")) {
-      return res.status(502).json({ error: "Provider returned an error", details: text });
+      return res.status(502).json({ error: "Provider returned an error", providerError: cleanText(text) });
     }
 
     let parsed: any = {};
@@ -2085,7 +2109,7 @@ app.get("/api/numbers/daisy/services", async (req: Request, res: Response) => {
       const isHtml = text.trim().startsWith("<") || text.includes("<html");
       return res.status(502).json({
         error: isHtml ? "Provider is temporarily blocked. Please try again in a moment." : "Invalid response from provider",
-        details: isHtml ? undefined : text,
+        providerError: isHtml ? "Provider returned an HTML page (likely a security block)." : text,
       });
     }
 
@@ -2175,7 +2199,11 @@ app.post("/api/numbers/daisy/activations", async (req: Request, res: Response) =
 
     // Expected: ACCESS_NUMBER:id:phone
     if (!text.startsWith("ACCESS_NUMBER")) {
-      return res.status(502).json({ error: "Failed to rent number. Provider may be out of stock or the price exceeded the allowed limit.", details: text });
+      const isHtml = !text || text.trim().startsWith("<") || text.toLowerCase().includes("<html");
+      return res.status(502).json({
+        error: "Failed to rent number. Provider may be out of stock or the price exceeded the allowed limit.",
+        providerError: isHtml ? "Provider returned an HTML page (likely a security block)." : text,
+      });
     }
 
     const parts = text.split(":");
@@ -2276,7 +2304,8 @@ app.get("/api/numbers/daisy/activations/status/:activationId", async (req: Reque
     res.json({ status: "success", data: statusText });
   } catch (err: any) {
     console.error("Status error:", err.response?.data || err.message);
-    res.status(500).json({ error: "Failed to fetch status", details: err.response?.data || err.message });
+    const { status, details } = providerErrorDetails(err);
+    res.status(500).json({ error: "Failed to fetch status", providerStatus: status, providerError: details });
   }
 });
 
@@ -2298,7 +2327,11 @@ app.patch("/api/numbers/daisy/activations/:activationId", async (req: Request, r
 
     if (status === "8" && !cancelled && !alreadyDone) {
       // Unexpected response — do not refund
-      return res.status(502).json({ error: "Provider rejected cancellation", details: text });
+      const isHtml = !text || text.trim().startsWith("<") || text.toLowerCase().includes("<html");
+      return res.status(502).json({
+        error: "Provider rejected cancellation",
+        providerError: isHtml ? "Provider returned an HTML page (likely a security block)." : text,
+      });
     }
 
     await session.withTransaction(async () => {
@@ -2325,7 +2358,8 @@ app.patch("/api/numbers/daisy/activations/:activationId", async (req: Request, r
     res.json({ status: "success", data: text, refunded: cancelled, newStatus: localStatus });
   } catch (err: any) {
     console.error("Update activation error:", err.response?.data || err.message);
-    res.status(500).json({ error: "Failed to cancel activation", details: err.response?.data || err.message });
+    const { status, details } = providerErrorDetails(err);
+    res.status(500).json({ error: "Failed to cancel activation", providerStatus: status, providerError: details });
   } finally {
     session.endSession();
   }
