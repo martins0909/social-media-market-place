@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { apiFetch, catalogAPI, purchaseHistoryAPI, catalogCategoriesAPI, warmBackend } from "@/lib/api";
-import { Banknote, ChevronDown, History, Copy, Home, Menu, LogIn, FileText, Headphones, MessageCircle, Wallet, Eye, EyeOff, CreditCard, Zap, List, Check, User, Bell, ArrowRightLeft, Send, MoreHorizontal, LogOut, Plus, BadgeCheck, X, ShoppingCart, Minus, LayoutGrid, Moon, Sun, HelpCircle, Gift, Smartphone, Loader2 } from "lucide-react";
+import { Banknote, ChevronDown, History, Copy, Home, Menu, LogIn, FileText, Headphones, MessageCircle, Wallet, Eye, EyeOff, CreditCard, Zap, List, Check, User, Bell, ArrowRightLeft, Send, MoreHorizontal, LogOut, Plus, BadgeCheck, X, ShoppingCart, Minus, LayoutGrid, Moon, Sun, HelpCircle, Gift, Smartphone, Loader2, Phone } from "lucide-react";
 import bannerImg from "@/assets/ban.jpg";
 import bannerLog1 from "@/assets/bannerlog1.jpg";
 import bannerLog2 from "@/assets/bannerlog2.jpg";
@@ -1006,18 +1006,24 @@ const Shop = () => {
       });
     };
 
+    const isPhoneNumber = (value: string) => /^[\+]?[\d\s\-\(\)]{7,}$/.test(value.trim());
+
     const openSerialUrl = (url: string) => {
       if (!url) return;
-      window.open(url, "_blank", "noopener,noreferrer");
+      if (isPhoneNumber(url)) {
+        window.location.href = `tel:${url.replace(/\s/g, "")}`;
+      } else {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
     };
 
     const copySerialUrl = async (url: string) => {
       if (!url) return;
       try {
         await navigator.clipboard.writeText(url);
-        toast.success("Link copied");
+        toast.success(isPhoneNumber(url) ? "Phone number copied" : "Link copied");
       } catch {
-        toast.error("Failed to copy link");
+        toast.error("Failed to copy");
       }
     };
 
@@ -1190,24 +1196,31 @@ const Shop = () => {
                         {isSelected && <Check className="h-3.5 w-3.5" />}
                       </button>
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-sm text-gray-900 dark:text-white">Account</p>
+                        <p className="font-semibold text-sm text-gray-900 dark:text-white">
+                          {serial.url && isPhoneNumber(serial.url) ? "Phone Number" : "Account"}
+                        </p>
                         <p className="font-bold text-sm text-[#1565C0] dark:text-[#4d9cff]">#{displayId}</p>
+                        {serial.url && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                            {isPhoneNumber(serial.url) ? serial.url : "Check link available"}
+                          </p>
+                        )}
                       </div>
                       <button
                         type="button"
                         onClick={() => openSerialUrl(serial.url || "")}
                         disabled={!serial.url}
                         className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400 disabled:opacity-40"
-                        aria-label="Open link"
+                        aria-label={serial.url && isPhoneNumber(serial.url) ? "Call phone number" : "Open link"}
                       >
-                        <Eye className="h-4 w-4" />
+                        {serial.url && isPhoneNumber(serial.url) ? <Phone className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                       <button
                         type="button"
                         onClick={() => copySerialUrl(serial.url || "")}
                         disabled={!serial.url}
                         className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400 disabled:opacity-40"
-                        aria-label="Copy link"
+                        aria-label={serial.url && isPhoneNumber(serial.url) ? "Copy phone number" : "Copy link"}
                       >
                         <Copy className="h-4 w-4" />
                       </button>

@@ -419,9 +419,13 @@ export default function AdminCatalog() {
     }
 
     const url = newSerialUrl.trim();
-    if (url && !/^https?:\/\//i.test(url)) {
-      toast.error("URL must start with http:// or https://");
-      return;
+    if (url) {
+      const isUrl = /^https?:\/\//i.test(url);
+      const isPhone = /^[\+]?[\d\s\-\(\)]{7,}$/.test(url);
+      if (!isUrl && !isPhone) {
+        toast.error("Please enter a valid URL (http:// or https://) or phone number");
+        return;
+      }
     }
 
     const serial: SerialNumber = {
@@ -625,9 +629,13 @@ export default function AdminCatalog() {
     if (!product) return;
 
     const url = editingSerialUrl.trim();
-    if (url && !/^https?:\/\//i.test(url)) {
-      toast.error("URL must start with http:// or https://");
-      return;
+    if (url) {
+      const isUrl = /^https?:\/\//i.test(url);
+      const isPhone = /^[\+]?[\d\s\-\(\)]{7,}$/.test(url);
+      if (!isUrl && !isPhone) {
+        toast.error("Please enter a valid URL (http:// or https://) or phone number");
+        return;
+      }
     }
 
     const updatedSerials = (product.serialNumbers || []).map(s =>
@@ -1007,7 +1015,7 @@ export default function AdminCatalog() {
                   className="font-mono"
                 />
                 <Input
-                  placeholder="Check URL / link (optional)"
+                  placeholder="Check URL / link / phone (optional)"
                   value={newSerialUrl}
                   onChange={(e) => setNewSerialUrl(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && addSerialNumber()}
@@ -1113,14 +1121,26 @@ export default function AdminCatalog() {
                         </div>
                       ) : (
                         serial.url && (
-                          <a
-                            href={serial.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-green-600 dark:text-green-400 hover:underline break-all inline-block mt-0.5"
-                          >
-                            {serial.url}
-                          </a>
+                          (() => {
+                            const isPhone = /^[\+]?[\d\s\-\(\)]{7,}$/.test(serial.url.trim());
+                            return isPhone ? (
+                              <a
+                                href={`tel:${serial.url.replace(/\s/g, "")}`}
+                                className="text-xs text-green-600 dark:text-green-400 hover:underline break-all inline-block mt-0.5"
+                              >
+                                {serial.url}
+                              </a>
+                            ) : (
+                              <a
+                                href={serial.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-green-600 dark:text-green-400 hover:underline break-all inline-block mt-0.5"
+                              >
+                                {serial.url}
+                              </a>
+                            );
+                          })()
                         )
                       )}
                       {serial.isUsed && serial.usedBy && (
