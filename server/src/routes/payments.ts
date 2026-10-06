@@ -212,9 +212,11 @@ router.post('/pocketfi/initiate', async (req, res) => {
     });
   } catch (error: any) {
     console.error('PocketFi initiate error:', error?.response?.data || error.message);
+    const rawMessage = error.responseData?.responseMessage || error.responseData?.errorMessage || error.responseData?.error || error.message || 'Internal server error';
+    const isHtml = typeof rawMessage === 'string' && (rawMessage.trim().startsWith('<') || rawMessage.toLowerCase().includes('<html'));
     return res.status(500).json({
       success: false,
-      error: error?.response?.data?.message || error.message || 'Failed to initiate PocketFi payment',
+      error: isHtml ? 'Payment provider returned an invalid response. Please try again.' : rawMessage,
     });
   }
 });
@@ -292,14 +294,23 @@ router.post('/ercas/initiate', async (req, res) => {
         };
     } catch (err: any) {
         console.error("Ercaspay Initiate Error (Axios):", err.response?.data || err.message);
-        if (err.response?.status === 401) {
+        const status = err.response?.status;
+        const ercasMessage = err.response?.data?.errorMessage || err.response?.data?.message || err.response?.data?.error || err.message;
+        if (status === 401) {
              return res.status(401).json({
                 success: false,
-                error: "Invalid Ercaspay Secret Key. Please check your .env file.",
+                error: "Invalid Ercaspay Secret Key. Please check your ECRS_SECRET_KEY.",
+             });
+        }
+        if (status === 403) {
+             return res.status(403).json({
+                success: false,
+                error: "Ercaspay access denied. Your secret key may be incorrect, expired, or not authorized for this API.",
+                details: ercasMessage,
              });
         }
         throw { 
-            message: err.response?.data?.errorMessage || err.message, 
+            message: ercasMessage, 
             responseData: err.response?.data 
         };
     }
