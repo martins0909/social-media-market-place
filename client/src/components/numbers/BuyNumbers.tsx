@@ -405,6 +405,7 @@ export default function BuyNumbers({ user, provider, onClose, onBalanceChange }:
             userId: user!.id,
             service: service.code,
             serviceName: service.name,
+            priceUsd: Number(service.price) || 0,
           }),
         });
       }

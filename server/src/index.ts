@@ -2184,7 +2184,7 @@ app.get("/api/numbers/daisy/debug", async (req: Request, res: Response) => {
 app.post("/api/numbers/daisy/activations", async (req: Request, res: Response) => {
   const session = await mongoose.startSession();
   try {
-    const { userId, service, serviceName, maxPrice = 10 } = req.body;
+    const { userId, service, serviceName, priceUsd: sentPriceUsd, maxPrice } = req.body;
     if (!userId || !service) {
       return res.status(400).json({ error: "userId and service are required" });
     }
@@ -2193,8 +2193,24 @@ app.post("/api/numbers/daisy/activations", async (req: Request, res: Response) =
 
     const settings = await ensureSettings();
 
-    // Rent from provider with a high max_price ceiling so we can read the actual X-Price header
-    const raw = await daisyRequestRaw("getNumber", { service, max_price: Number(maxPrice) });
+    // Use the price the user saw on the frontend as the expected price.
+    // This prevents charging the high fallback ceiling if X-Price header is missing.
+    const expectedUsd = Number(sentPriceUsd) || Number(maxPrice) || 0;
+    if (!expectedUsd || expectedUsd <= 0) {
+      return res.status(400).json({ error: "Service price is required" });
+    }
+
+    // Allow a small buffer for provider price fluctuations (max 50% above displayed price).
+    const maxUsd = Math.max(expectedUsd * 1.5, expectedUsd + 0.5);
+
+    // Check user has enough balance for the expected price before calling provider.
+    const expectedNgn = calculateNgnPrice(expectedUsd, settings.exchangeRate, settings.markupPercentage);
+    if ((user.balance || 0) < expectedNgn) {
+      return res.status(400).json({ error: "Insufficient balance" });
+    }
+
+    // Rent from provider
+    const raw = await daisyRequestRaw("getNumber", { service, max_price: maxUsd });
     const text = raw.text;
 
     // Expected: ACCESS_NUMBER:id:phone
@@ -2210,9 +2226,27 @@ app.post("/api/numbers/daisy/activations", async (req: Request, res: Response) =
     const activationId = parts[1];
     const phoneNumber = parts[2];
 
-    // Daisy returns the effective price in the X-Price header (fallback to maxPrice if missing)
-    const effectiveUsd = Number(raw.headers["x-price"]) || Number(maxPrice);
-    const priceUsd = effectiveUsd;
+    // Daisy returns the effective price in the X-Price header.
+    // Read it robustly from axios headers (case-insensitive lookup).
+    const headerValue =
+      raw.headers["x-price"] ??
+      raw.headers["X-Price"] ??
+      raw.headers["x_price"] ??
+      raw.headers["price"];
+    const actualUsdFromHeader = Number(headerValue);
+
+    // Use the actual provider price if available and reasonable; otherwise use the displayed price.
+    let priceUsd = expectedUsd;
+    if (!isNaN(actualUsdFromHeader) && actualUsdFromHeader > 0) {
+      if (actualUsdFromHeader > maxUsd) {
+        return res.status(502).json({
+          error: "Provider price is higher than expected. Please try again.",
+          providerError: `Provider price $${actualUsdFromHeader} exceeds max $${maxUsd}`,
+        });
+      }
+      priceUsd = actualUsdFromHeader;
+    }
+
     const priceNgn = calculateNgnPrice(priceUsd, settings.exchangeRate, settings.markupPercentage);
 
     if ((user.balance || 0) < priceNgn) {
