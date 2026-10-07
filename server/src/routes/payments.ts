@@ -7,10 +7,10 @@ import { Payment, User } from '../models';
 const router = express.Router();
 
 // Validate Ercaspay configuration
-const ECRS_AUTH_KEY = (process.env.ECRS_SECRET_KEY || process.env.ECRS_API_KEY || '').trim();
+const ECRS_AUTH_KEY = (process.env.ECRS_API_KEY || process.env.ECRS_SECRET_KEY || '').trim();
 const ECRS_API_BASE = process.env.ECRS_API_BASE || 'https://api.ercaspay.com';
 if (!ECRS_AUTH_KEY) {
-  console.error('FATAL: Ercaspay key not set. Set ECRS_SECRET_KEY (preferred) or ECRS_API_KEY.');
+  console.error('FATAL: Ercaspay key not set. Set ECRS_API_KEY (preferred) or ECRS_SECRET_KEY.');
 }
 
 const POCKETFI_BASE_URL = (process.env.POCKETFI_BASE_URL || process.env.POCKETFI_API_URL || '').trim();
