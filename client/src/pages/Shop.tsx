@@ -2912,10 +2912,6 @@ const Shop = () => {
               <Zap className="mr-3 h-5 w-5" />
               {isCreatingQuickPay ? "Preparing Quick Pay..." : "Quick Pay"}
             </Button>
-            <Button onClick={() => toast.info("Instant payment (ERCAS) coming soon")} className="w-full h-14 justify-start px-4 text-left font-semibold text-base bg-[#1565C0] hover:bg-[#0d4f9f] shadow-md">
-              <CreditCard className="mr-3 h-5 w-5" />
-              Instant payment (ercas)
-            </Button>
             <Button onClick={() => {
                 setShowPaymentMethodDialog(false);
                 setShowManualFundsDialog(true);
