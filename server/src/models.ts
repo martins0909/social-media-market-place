@@ -114,6 +114,28 @@ export interface INumberTransaction extends Document {
 export interface ISettings extends Document {
   markupPercentage: number;
   exchangeRate: number;
+  boostMarkupPercentage: number;
+  updatedAt?: Date;
+}
+
+export interface IBoostOrder extends Document {
+  userId: string;
+  email: string;
+  providerOrderId?: string;
+  serviceId: string;
+  serviceName: string;
+  category: string;
+  link: string;
+  quantity: number;
+  ratePer1000Usd: number;
+  priceUsd: number;
+  priceNgn: number;
+  status: string;
+  startCount?: string;
+  remains?: string;
+  charge?: number;
+  currency?: string;
+  createdAt: Date;
   updatedAt?: Date;
 }
 
@@ -384,8 +406,32 @@ NumberTransactionSchema.index({ createdAt: -1 });
 const SettingsSchema = new Schema<ISettings>({
   markupPercentage: { type: Number, default: 0 },
   exchangeRate: { type: Number, default: 1500 },
+  boostMarkupPercentage: { type: Number, default: 0 },
   updatedAt: { type: Date, default: Date.now },
 });
+
+const BoostOrderSchema = new Schema<IBoostOrder>({
+  userId: { type: String, required: true, index: true },
+  email: { type: String, required: true },
+  providerOrderId: { type: String },
+  serviceId: { type: String, required: true },
+  serviceName: { type: String, required: true },
+  category: { type: String, required: true },
+  link: { type: String, required: true },
+  quantity: { type: Number, required: true },
+  ratePer1000Usd: { type: Number, required: true },
+  priceUsd: { type: Number, required: true },
+  priceNgn: { type: Number, required: true },
+  status: { type: String, default: "Pending" },
+  startCount: { type: String },
+  remains: { type: String },
+  charge: { type: Number },
+  currency: { type: String },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+BoostOrderSchema.index({ createdAt: -1 });
+BoostOrderSchema.index({ status: 1 });
 
 const TransferSchema = new Schema<ITransfer>({
   senderId: { type: String, required: true, index: true },
@@ -420,3 +466,4 @@ export const NumberRental = mongoose.model<INumberRental>("NumberRental", Number
 export const NumberTransaction = mongoose.model<INumberTransaction>("NumberTransaction", NumberTransactionSchema);
 export const Settings = mongoose.model<ISettings>("Settings", SettingsSchema);
 export const Transfer = mongoose.model<ITransfer>("Transfer", TransferSchema);
+export const BoostOrder = mongoose.model<IBoostOrder>("BoostOrder", BoostOrderSchema);

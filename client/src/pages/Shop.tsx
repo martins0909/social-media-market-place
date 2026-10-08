@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { apiFetch, catalogAPI, purchaseHistoryAPI, catalogCategoriesAPI, warmBackend } from "@/lib/api";
-import { Banknote, ChevronDown, History, Copy, Home, Menu, LogIn, FileText, Headphones, MessageCircle, Wallet, Eye, EyeOff, CreditCard, Zap, List, Check, User, Bell, ArrowRightLeft, Send, MoreHorizontal, LogOut, Plus, BadgeCheck, X, ShoppingCart, Minus, LayoutGrid, Moon, Sun, HelpCircle, Gift, Smartphone, Loader2, Phone } from "lucide-react";
+import { Banknote, ChevronDown, History, Copy, Home, Menu, LogIn, FileText, Headphones, MessageCircle, Wallet, Eye, EyeOff, CreditCard, Zap, List, Check, User, Users, Bell, ArrowRightLeft, Send, MoreHorizontal, LogOut, Plus, BadgeCheck, X, ShoppingCart, Minus, LayoutGrid, Moon, Sun, HelpCircle, Gift, Smartphone, Loader2, Phone } from "lucide-react";
 import bannerImg from "@/assets/ban.jpg";
 import bannerLog1 from "@/assets/bannerlog1.jpg";
 import bannerLog2 from "@/assets/bannerlog2.jpg";
@@ -17,6 +17,7 @@ import { Carousel, CarouselContent, CarouselItem, type CarouselApi } from "@/com
 import { useTheme } from "@/components/theme-provider";
 import logo from "@/assets/pics (2).png";
 import BuyNumbers from "@/components/numbers/BuyNumbers";
+import BoostFollowers from "@/components/boost/BoostFollowers";
 // Removed demo product assets; shop now shows only database products
 
 interface SerialNumber {
@@ -168,6 +169,7 @@ const Shop = () => {
   const [showNotificationsDrawer, setShowNotificationsDrawer] = useState(false);
   const [showBuyNumbers, setShowBuyNumbers] = useState(false);
   const [numbersProvider, setNumbersProvider] = useState<"bloom" | "daisy">("bloom");
+  const [showBoostFollowers, setShowBoostFollowers] = useState(false);
   const [showTransferDialog, setShowTransferDialog] = useState(false);
   const [transferEmail, setTransferEmail] = useState("");
   const [transferAmount, setTransferAmount] = useState("");
@@ -1280,6 +1282,18 @@ const Shop = () => {
         />
       )}
 
+      {/* Boost Followers Page */}
+      {showBoostFollowers && user && (
+        <BoostFollowers
+          user={user}
+          onClose={() => setShowBoostFollowers(false)}
+          onBalanceChange={(balance) => {
+            setUser((prev) => (prev ? { ...prev, balance } : prev));
+            localStorage.setItem("currentUser", JSON.stringify({ ...user, balance }));
+          }}
+        />
+      )}
+
       {/* Mobile Header */}
       <div className="md:hidden sticky top-0 z-50 bg-gray-50/95 dark:bg-black/95 backdrop-blur-md px-4 py-3 border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-center justify-between gap-2">
@@ -1599,14 +1613,14 @@ const Shop = () => {
                 </button>
 
                 <button
-                  onClick={openConvertDialog}
+                  onClick={() => setShowBoostFollowers(true)}
                   className="flex flex-col items-center gap-2 p-2 rounded-2xl bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors"
                 >
-                  <div className="w-10 h-10 rounded-full bg-teal-500 flex items-center justify-center text-white shadow-lg">
-                    <ArrowRightLeft className="h-4 w-4" />
+                  <div className="w-10 h-10 rounded-full bg-fuchsia-600 flex items-center justify-center text-white shadow-lg">
+                    <Users className="h-4 w-4" />
                   </div>
-                  <span className="text-[10px] font-semibold text-gray-800 dark:text-gray-200">Convert</span>
-                  <span className="text-[9px] text-gray-500 dark:text-gray-400 -mt-1">Exchange</span>
+                  <span className="text-[10px] font-semibold text-gray-800 dark:text-gray-200">Boost</span>
+                  <span className="text-[9px] text-gray-500 dark:text-gray-400 -mt-1">Followers</span>
                 </button>
 
                 <button

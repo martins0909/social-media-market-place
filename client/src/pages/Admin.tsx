@@ -6,13 +6,14 @@ import CartsTable from "../components/admin/CartsTable";
 import { useEffect, useState } from "react";
 import AdminCatalog from "@/components/admin/AdminCatalog";
 import AdminNumbers from "@/components/admin/AdminNumbers";
+import AdminBoost from "@/components/admin/AdminBoost";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { Menu, X, Users, CreditCard, History, Package, LogOut, Smartphone } from "lucide-react";
+import { Menu, X, Users, CreditCard, History, Package, LogOut, Smartphone, TrendingUp } from "lucide-react";
 
 const Admin = () => {
   // Read token on mount to avoid SSR/window issues
   const [token, setToken] = useState<string | null>(null);
-  const [view, setView] = useState<"users" | "payments" | "carts" | "catalog" | "numbers">("users");
+  const [view, setView] = useState<"users" | "payments" | "carts" | "catalog" | "numbers" | "boost">("users");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -29,7 +30,7 @@ const Admin = () => {
     else localStorage.removeItem("admin_token");
   }, [token]);
 
-  const handleViewChange = (newView: "users" | "payments" | "carts" | "catalog" | "numbers") => {
+  const handleViewChange = (newView: "users" | "payments" | "carts" | "catalog" | "numbers" | "boost") => {
     setView(newView);
     setMobileMenuOpen(false);
   };
@@ -111,6 +112,14 @@ const Admin = () => {
                   <Smartphone className="h-4 w-4 mr-2" />
                   Buy Numbers
                 </Button>
+                <Button 
+                  variant={view === "boost" ? "default" : "ghost"} 
+                  onClick={() => setView("boost")}
+                  className={view === "boost" ? "bg-[#1565C0] hover:bg-[#0d4f9f]" : "dark:text-gray-300 dark:hover:bg-[#18181b]"}
+                >
+                  <TrendingUp className="h-4 w-4 mr-2" />
+                  Boost
+                </Button>
               </nav>
               <ThemeToggle />
               <Button 
@@ -170,6 +179,14 @@ const Admin = () => {
               Buy Numbers
             </Button>
             <Button 
+              variant={view === "boost" ? "default" : "ghost"} 
+              onClick={() => handleViewChange("boost")}
+              className={`w-full justify-start ${view === "boost" ? "bg-[#1565C0] hover:bg-[#0d4f9f]" : "dark:text-gray-300 dark:hover:bg-[#18181b]"}`}
+            >
+              <TrendingUp className="h-4 w-4 mr-2" />
+              Boost
+            </Button>
+            <Button 
               variant="ghost" 
               onClick={() => setToken(null)} 
               className="w-full justify-start hover:bg-red-50 hover:text-red-600 dark:text-gray-300 dark:hover:bg-red-950 dark:hover:text-red-400 transition-all duration-300"
@@ -190,6 +207,7 @@ const Admin = () => {
           {view === "carts" && <CartsTable token={token} />}
           {view === "catalog" && <AdminCatalog />}
           {view === "numbers" && <AdminNumbers />}
+          {view === "boost" && <AdminBoost />}
         </section>
       )}
     </main>

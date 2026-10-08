@@ -8,7 +8,7 @@ import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 import crypto from "crypto";
 import axios from "axios";
-import { User, Admin, Cart, Payment, Product, CatalogProduct, PurchaseHistory, CatalogCategory, ReferralBonus, NumberActivation, NumberRental, NumberTransaction, Settings, Transfer } from "./models";
+import { User, Admin, Cart, Payment, Product, CatalogProduct, PurchaseHistory, CatalogCategory, ReferralBonus, NumberActivation, NumberRental, NumberTransaction, Settings, Transfer, BoostOrder } from "./models";
 import paymentsRouter from "./routes/payments";
 
 const app = express();
@@ -1438,7 +1438,11 @@ const BLOOMSMS_API_KEY = process.env.BLOOMSMS_API_KEY || "";
 async function ensureSettings() {
   let settings = await Settings.findOne().exec();
   if (!settings) {
-    settings = await Settings.create({ markupPercentage: 0, exchangeRate: 1500 });
+    settings = await Settings.create({ markupPercentage: 0, exchangeRate: 1500, boostMarkupPercentage: 0 });
+  }
+  if (typeof settings.boostMarkupPercentage !== "number") {
+    settings.boostMarkupPercentage = 0;
+    await settings.save();
   }
   return settings;
 }
@@ -1486,7 +1490,11 @@ function providerErrorDetails(err: any): { status?: number; details: string } {
 app.get("/api/numbers/settings", async (req: Request, res: Response) => {
   try {
     const settings = await ensureSettings();
-    res.json({ markupPercentage: settings.markupPercentage, exchangeRate: settings.exchangeRate });
+    res.json({
+      markupPercentage: settings.markupPercentage,
+      exchangeRate: settings.exchangeRate,
+      boostMarkupPercentage: settings.boostMarkupPercentage,
+    });
   } catch (err) {
     console.error("Error fetching number settings:", err);
     res.status(500).json({ error: "Failed to fetch settings" });
@@ -1496,13 +1504,18 @@ app.get("/api/numbers/settings", async (req: Request, res: Response) => {
 // Settings: update (admin only, protected by basic admin auth if desired)
 app.put("/api/numbers/settings", async (req: Request, res: Response) => {
   try {
-    const { markupPercentage, exchangeRate } = req.body;
+    const { markupPercentage, exchangeRate, boostMarkupPercentage } = req.body;
     const settings = await ensureSettings();
     if (markupPercentage !== undefined) settings.markupPercentage = Number(markupPercentage);
     if (exchangeRate !== undefined) settings.exchangeRate = Number(exchangeRate);
+    if (boostMarkupPercentage !== undefined) settings.boostMarkupPercentage = Number(boostMarkupPercentage);
     settings.updatedAt = new Date();
     await settings.save();
-    res.json({ markupPercentage: settings.markupPercentage, exchangeRate: settings.exchangeRate });
+    res.json({
+      markupPercentage: settings.markupPercentage,
+      exchangeRate: settings.exchangeRate,
+      boostMarkupPercentage: settings.boostMarkupPercentage,
+    });
   } catch (err) {
     console.error("Error updating number settings:", err);
     res.status(500).json({ error: "Failed to update settings" });
@@ -2414,6 +2427,327 @@ app.post("/api/numbers/daisy/webhook", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("DaisySMS webhook error:", err);
     res.status(500).json({ error: "Webhook processing failed" });
+  }
+});
+
+// ======== BOOST FOLLOWERS MODULE (Really Simple Social) ========
+
+const RSS_BASE = "https://reallysimplesocial.com/api/v2";
+const RSS_API_KEY = process.env.RSS_API_KEY || "";
+
+interface RssService {
+  service: string;
+  name: string;
+  type?: string;
+  category: string;
+  rate: number;
+  min: number;
+  max: number;
+  refill?: string;
+  cancel?: string;
+}
+
+async function rssRequest(action: string, params: Record<string, string | number> = {}) {
+  if (!RSS_API_KEY) {
+    throw new Error("Boost provider API key is not configured");
+  }
+
+  const form = new URLSearchParams();
+  form.append("key", RSS_API_KEY);
+  form.append("action", action);
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null) form.append(k, String(v));
+  });
+
+  const res = await axios.post(RSS_BASE, form, {
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json, text/plain, */*",
+    },
+    timeout: 30000,
+    validateStatus: () => true,
+  });
+
+  const data = res.data;
+  if (typeof data === "string") {
+    const text = data.trim();
+    // Some SMM panels return plain text errors
+    if (text.toLowerCase().startsWith("<html") || text.toLowerCase().startsWith("<!doctype")) {
+      throw new Error("Provider returned an HTML page");
+    }
+    // Try parse JSON if it looks like JSON
+    if (text.startsWith("{") || text.startsWith("[")) {
+      try {
+        return JSON.parse(text);
+      } catch {
+        return text;
+      }
+    }
+    return text;
+  }
+  return data;
+}
+
+function calculateBoostNgnPrice(usd: number, exchangeRate: number, markupPercentage: number) {
+  return Math.ceil(usd * exchangeRate * (1 + markupPercentage / 100));
+}
+
+function normalizeRssServices(raw: any): RssService[] {
+  if (!raw) return [];
+  // Common format: array of services
+  if (Array.isArray(raw)) {
+    return raw.map((s: any) => ({
+      service: String(s.service ?? s.id ?? ""),
+      name: String(s.name ?? ""),
+      type: s.type ? String(s.type) : undefined,
+      category: String(s.category ?? ""),
+      rate: Number(s.rate ?? s.price ?? 0),
+      min: Number(s.min ?? 0),
+      max: Number(s.max ?? 0),
+      refill: s.refill ? String(s.refill) : undefined,
+      cancel: s.cancel ? String(s.cancel) : undefined,
+    })).filter((s) => s.service && s.name);
+  }
+  // Object keyed by service id
+  if (typeof raw === "object") {
+    return Object.keys(raw).map((key) => {
+      const s = raw[key];
+      if (!s || typeof s !== "object") return null;
+      return {
+        service: String(s.service ?? key ?? ""),
+        name: String(s.name ?? ""),
+        type: s.type ? String(s.type) : undefined,
+        category: String(s.category ?? ""),
+        rate: Number(s.rate ?? s.price ?? 0),
+        min: Number(s.min ?? 0),
+        max: Number(s.max ?? 0),
+        refill: s.refill ? String(s.refill) : undefined,
+        cancel: s.cancel ? String(s.cancel) : undefined,
+      };
+    }).filter(Boolean) as RssService[];
+  }
+  return [];
+}
+
+function groupServicesByCategory(services: RssService[]) {
+  const groups: Record<string, RssService[]> = {};
+  services.forEach((s) => {
+    const cat = s.category || "Other";
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(s);
+  });
+  // Sort categories and services within each category
+  const sorted: Record<string, RssService[]> = {};
+  Object.keys(groups)
+    .sort((a, b) => a.localeCompare(b))
+    .forEach((cat) => {
+      sorted[cat] = groups[cat].sort((a, b) => a.name.localeCompare(b.name));
+    });
+  return sorted;
+}
+
+// Proxy: list services grouped by category
+app.get("/api/boost/services", async (req: Request, res: Response) => {
+  try {
+    if (!RSS_API_KEY) {
+      return res.status(503).json({ error: "Boost provider API key is not configured" });
+    }
+
+    const cacheKey = "boost:services";
+    const cached = cacheGet<RssService[]>(cacheKey);
+    let services: RssService[];
+    if (cached) {
+      services = cached;
+    } else {
+      const raw = await rssRequest("services");
+      services = normalizeRssServices(raw);
+      if (services.length === 0) {
+        return res.status(502).json({ error: "No services returned by provider", providerResponse: raw });
+      }
+      cacheSet(cacheKey, services, 10 * 60 * 1000); // cache 10 minutes
+    }
+
+    const settings = await ensureSettings();
+    const enriched = services.map((s) => {
+      const rate = Number(s.rate) || 0;
+      const min = Number(s.min) || 0;
+      const max = Number(s.max) || 0;
+      // Price for min quantity
+      const minUsd = (rate * min) / 1000;
+      return {
+        ...s,
+        rate: Number(rate.toFixed(4)),
+        min,
+        max,
+        pricePer1000Ngn: calculateBoostNgnPrice(rate, settings.exchangeRate, settings.boostMarkupPercentage),
+        minPriceNgn: calculateBoostNgnPrice(minUsd, settings.exchangeRate, settings.boostMarkupPercentage),
+      };
+    });
+
+    res.json({ status: "success", data: groupServicesByCategory(enriched) });
+  } catch (err: any) {
+    console.error("Boost services error:", err.response?.data || err.message);
+    const { status, details } = providerErrorDetails(err);
+    res.status(502).json({ error: "Failed to load boost services", providerStatus: status, providerError: details });
+  }
+});
+
+// Place a boost order
+app.post("/api/boost/orders", async (req: Request, res: Response) => {
+  const session = await mongoose.startSession();
+  try {
+    const { userId, serviceId, serviceName, category, link, quantity, ratePer1000Usd } = req.body;
+    if (!userId || !serviceId || !link || !quantity) {
+      return res.status(400).json({ error: "userId, serviceId, link and quantity are required" });
+    }
+
+    const user = await User.findById(userId).exec();
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const settings = await ensureSettings();
+    const qty = Number(quantity);
+    const rate = Number(ratePer1000Usd) || 0;
+    const priceUsd = (rate * qty) / 1000;
+    const priceNgn = calculateBoostNgnPrice(priceUsd, settings.exchangeRate, settings.boostMarkupPercentage);
+
+    if (!priceUsd || priceUsd <= 0) {
+      return res.status(400).json({ error: "Invalid service price" });
+    }
+    if ((user.balance || 0) < priceNgn) {
+      return res.status(400).json({ error: "Insufficient balance" });
+    }
+
+    const rssResp = await rssRequest("add", { service: serviceId, link, quantity: qty });
+
+    // Common response formats: { order: 123 } or { order_id: 123 } or plain number string
+    let providerOrderId: string | undefined;
+    if (typeof rssResp === "string") {
+      providerOrderId = rssResp.trim();
+    } else if (rssResp && typeof rssResp === "object") {
+      providerOrderId = String(rssResp.order ?? rssResp.order_id ?? rssResp.id ?? "");
+    }
+
+    if (!providerOrderId) {
+      return res.status(502).json({ error: "Failed to place boost order", providerResponse: rssResp });
+    }
+
+    let newBalance = 0;
+    await session.withTransaction(async () => {
+      const updatedUser = await User.findByIdAndUpdate(
+        user._id,
+        { $inc: { balance: -priceNgn } },
+        { new: true, session }
+      ).exec();
+      newBalance = updatedUser?.balance || 0;
+
+      await new BoostOrder({
+        userId: user._id.toString(),
+        email: user.email,
+        providerOrderId,
+        serviceId: String(serviceId),
+        serviceName: serviceName || "Boost Service",
+        category: category || "",
+        link,
+        quantity: qty,
+        ratePer1000Usd: rate,
+        priceUsd,
+        priceNgn,
+        status: "Pending",
+      }).save({ session });
+    });
+
+    res.json({ ok: true, orderId: providerOrderId, priceNgn, newBalance });
+  } catch (err: any) {
+    console.error("Boost order error:", err.response?.data || err.message);
+    const { status, details } = providerErrorDetails(err);
+    res.status(500).json({ error: "Failed to place boost order", providerStatus: status, providerError: details });
+  } finally {
+    session.endSession();
+  }
+});
+
+// Get user's boost orders
+app.get("/api/boost/orders/:userId", async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const orders = await BoostOrder.find({ userId }).sort({ createdAt: -1 }).lean();
+    res.json(orders);
+  } catch (err) {
+    console.error("Error fetching boost orders:", err);
+    res.status(500).json({ error: "Failed to fetch boost orders" });
+  }
+});
+
+// Sync an order status from provider
+async function syncBoostOrderStatus(order: any) {
+  if (!order?.providerOrderId) return order;
+  try {
+    const rssResp = await rssRequest("status", { order: order.providerOrderId });
+    let status = order.status;
+    let startCount = order.startCount;
+    let remains = order.remains;
+    let charge = order.charge;
+    let currency = order.currency;
+
+    if (typeof rssResp === "object" && rssResp) {
+      status = rssResp.status ?? status;
+      startCount = rssResp.start_count ?? startCount;
+      remains = rssResp.remains ?? remains;
+      charge = rssResp.charge ?? charge;
+      currency = rssResp.currency ?? currency;
+    }
+
+    await BoostOrder.updateOne(
+      { _id: order._id },
+      { status, startCount, remains, charge, currency, updatedAt: new Date() }
+    ).exec();
+
+    return { ...order, status, startCount, remains, charge, currency };
+  } catch (e) {
+    console.error("Boost status sync error for order", order.providerOrderId, e);
+    return order;
+  }
+}
+
+// Check boost order status
+app.get("/api/boost/orders/status/:orderId", async (req: Request, res: Response) => {
+  try {
+    const { orderId } = req.params;
+    const order = await BoostOrder.findOne({ providerOrderId: orderId }).lean();
+    if (!order) return res.status(404).json({ error: "Order not found" });
+    const updated = await syncBoostOrderStatus(order);
+    res.json(updated);
+  } catch (err) {
+    console.error("Boost status error:", err);
+    res.status(500).json({ error: "Failed to fetch boost order status" });
+  }
+});
+
+// Admin: all boost orders
+app.get("/api/boost/admin/orders", async (req: Request, res: Response) => {
+  try {
+    const orders = await BoostOrder.find().sort({ createdAt: -1 }).lean();
+    res.json(orders);
+  } catch (err) {
+    console.error("Admin boost orders error:", err);
+    res.status(500).json({ error: "Failed to fetch boost orders" });
+  }
+});
+
+// Admin: sync all pending boost orders
+app.post("/api/boost/admin/sync", async (req: Request, res: Response) => {
+  try {
+    const pending = await BoostOrder.find({
+      status: { $in: ["Pending", "In progress", "Processing", "In Progress"] },
+    }).lean();
+    const results = [];
+    for (const order of pending) {
+      results.push(await syncBoostOrderStatus(order));
+    }
+    res.json({ synced: results.length, orders: results });
+  } catch (err) {
+    console.error("Boost admin sync error:", err);
+    res.status(500).json({ error: "Failed to sync boost orders" });
   }
 });
 
