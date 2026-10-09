@@ -1438,12 +1438,15 @@ const BLOOMSMS_API_KEY = process.env.BLOOMSMS_API_KEY || "";
 async function ensureSettings() {
   let settings = await Settings.findOne().exec();
   if (!settings) {
-    settings = await Settings.create({ markupPercentage: 0, exchangeRate: 1500, boostMarkupPercentage: 0 });
+    settings = await Settings.create({ markupPercentage: 0, exchangeRate: 1500, boostMarkupPercentage: 0, boostFlatMarkupNgn: 0 });
   }
   if (typeof settings.boostMarkupPercentage !== "number") {
     settings.boostMarkupPercentage = 0;
-    await settings.save();
   }
+  if (typeof settings.boostFlatMarkupNgn !== "number") {
+    settings.boostFlatMarkupNgn = 0;
+  }
+  if (settings.isModified()) await settings.save();
   return settings;
 }
 
@@ -1494,6 +1497,7 @@ app.get("/api/numbers/settings", async (req: Request, res: Response) => {
       markupPercentage: settings.markupPercentage,
       exchangeRate: settings.exchangeRate,
       boostMarkupPercentage: settings.boostMarkupPercentage,
+      boostFlatMarkupNgn: settings.boostFlatMarkupNgn,
     });
   } catch (err) {
     console.error("Error fetching number settings:", err);
@@ -1504,17 +1508,19 @@ app.get("/api/numbers/settings", async (req: Request, res: Response) => {
 // Settings: update (admin only, protected by basic admin auth if desired)
 app.put("/api/numbers/settings", async (req: Request, res: Response) => {
   try {
-    const { markupPercentage, exchangeRate, boostMarkupPercentage } = req.body;
+    const { markupPercentage, exchangeRate, boostMarkupPercentage, boostFlatMarkupNgn } = req.body;
     const settings = await ensureSettings();
     if (markupPercentage !== undefined) settings.markupPercentage = Number(markupPercentage);
     if (exchangeRate !== undefined) settings.exchangeRate = Number(exchangeRate);
     if (boostMarkupPercentage !== undefined) settings.boostMarkupPercentage = Number(boostMarkupPercentage);
+    if (boostFlatMarkupNgn !== undefined) settings.boostFlatMarkupNgn = Number(boostFlatMarkupNgn);
     settings.updatedAt = new Date();
     await settings.save();
     res.json({
       markupPercentage: settings.markupPercentage,
       exchangeRate: settings.exchangeRate,
       boostMarkupPercentage: settings.boostMarkupPercentage,
+      boostFlatMarkupNgn: settings.boostFlatMarkupNgn,
     });
   } catch (err) {
     console.error("Error updating number settings:", err);
@@ -2443,6 +2449,8 @@ interface RssService {
   rate: number;
   min: number;
   max: number;
+  averageTime?: string;
+  description?: string;
   refill?: string;
   cancel?: string;
 }
@@ -2488,8 +2496,10 @@ async function rssRequest(action: string, params: Record<string, string | number
   return data;
 }
 
-function calculateBoostNgnPrice(usd: number, exchangeRate: number, markupPercentage: number) {
-  return Math.ceil(usd * exchangeRate * (1 + markupPercentage / 100));
+function calculateBoostNgnPrice(usd: number, exchangeRate: number, markupPercentage: number, flatMarkupNgnPer1000 = 0) {
+  // flatMarkupNgnPer1000 is added to the per-1000 selling price
+  const per1000Base = usd * exchangeRate * (1 + markupPercentage / 100);
+  return Math.ceil(per1000Base + flatMarkupNgnPer1000);
 }
 
 function normalizeRssServices(raw: any): RssService[] {
@@ -2504,6 +2514,8 @@ function normalizeRssServices(raw: any): RssService[] {
       rate: Number(s.rate ?? s.price ?? 0),
       min: Number(s.min ?? 0),
       max: Number(s.max ?? 0),
+      averageTime: s.average_time ? String(s.average_time) : undefined,
+      description: s.description ? String(s.description) : undefined,
       refill: s.refill ? String(s.refill) : undefined,
       cancel: s.cancel ? String(s.cancel) : undefined,
     })).filter((s) => s.service && s.name);
@@ -2521,6 +2533,8 @@ function normalizeRssServices(raw: any): RssService[] {
         rate: Number(s.rate ?? s.price ?? 0),
         min: Number(s.min ?? 0),
         max: Number(s.max ?? 0),
+        averageTime: s.average_time ? String(s.average_time) : undefined,
+        description: s.description ? String(s.description) : undefined,
         refill: s.refill ? String(s.refill) : undefined,
         cancel: s.cancel ? String(s.cancel) : undefined,
       };
@@ -2572,15 +2586,15 @@ app.get("/api/boost/services", async (req: Request, res: Response) => {
       const rate = Number(s.rate) || 0;
       const min = Number(s.min) || 0;
       const max = Number(s.max) || 0;
-      // Price for min quantity
-      const minUsd = (rate * min) / 1000;
+      const pricePer1000Ngn = calculateBoostNgnPrice(rate, settings.exchangeRate, settings.boostMarkupPercentage, settings.boostFlatMarkupNgn);
+      const minPriceNgn = Math.ceil((pricePer1000Ngn * min) / 1000);
       return {
         ...s,
         rate: Number(rate.toFixed(4)),
         min,
         max,
-        pricePer1000Ngn: calculateBoostNgnPrice(rate, settings.exchangeRate, settings.boostMarkupPercentage),
-        minPriceNgn: calculateBoostNgnPrice(minUsd, settings.exchangeRate, settings.boostMarkupPercentage),
+        pricePer1000Ngn,
+        minPriceNgn,
       };
     });
 
@@ -2607,8 +2621,9 @@ app.post("/api/boost/orders", async (req: Request, res: Response) => {
     const settings = await ensureSettings();
     const qty = Number(quantity);
     const rate = Number(ratePer1000Usd) || 0;
+    const pricePer1000Ngn = calculateBoostNgnPrice(rate, settings.exchangeRate, settings.boostMarkupPercentage, settings.boostFlatMarkupNgn);
     const priceUsd = (rate * qty) / 1000;
-    const priceNgn = calculateBoostNgnPrice(priceUsd, settings.exchangeRate, settings.boostMarkupPercentage);
+    const priceNgn = Math.ceil((pricePer1000Ngn * qty) / 1000);
 
     if (!priceUsd || priceUsd <= 0) {
       return res.status(400).json({ error: "Invalid service price" });
@@ -2731,6 +2746,34 @@ app.get("/api/boost/admin/orders", async (req: Request, res: Response) => {
   } catch (err) {
     console.error("Admin boost orders error:", err);
     res.status(500).json({ error: "Failed to fetch boost orders" });
+  }
+});
+
+// Get user's refund-eligible boost orders
+app.get("/api/boost/refunds/:userId", async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const orders = await BoostOrder.find({
+      userId,
+      status: { $in: ["Canceled", "Partial", "Cancelled"] },
+    }).sort({ createdAt: -1 }).lean();
+    res.json(orders);
+  } catch (err) {
+    console.error("Error fetching boost refunds:", err);
+    res.status(500).json({ error: "Failed to fetch boost refunds" });
+  }
+});
+
+// Admin: all refund-eligible boost orders
+app.get("/api/boost/admin/refunds", async (req: Request, res: Response) => {
+  try {
+    const orders = await BoostOrder.find({
+      status: { $in: ["Canceled", "Partial", "Cancelled"] },
+    }).sort({ createdAt: -1 }).lean();
+    res.json(orders);
+  } catch (err) {
+    console.error("Admin boost refunds error:", err);
+    res.status(500).json({ error: "Failed to fetch boost refunds" });
   }
 });
 

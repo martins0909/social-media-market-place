@@ -4,6 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   ArrowLeft,
   Search,
   Users,
@@ -16,6 +23,9 @@ import {
   TrendingUp,
   ShoppingCart,
   Check,
+  Wallet,
+  BadgeDollarSign,
+  RotateCcw,
 } from "lucide-react";
 
 interface BoostFollowersProps {
@@ -24,7 +34,9 @@ interface BoostFollowersProps {
   onBalanceChange?: (balance: number) => void;
 }
 
-type View = "home" | "category" | "order" | "success" | "my-orders";
+type View = "home" | "new-order" | "services" | "success" | "my-orders" | "refunds";
+type OrderTab = "All" | "Pending" | "In progress" | "Completed" | "Partial" | "Processing" | "Canceled";
+type RefundTab = "All" | "Canceled" | "Partial";
 
 interface Service {
   service: string;
@@ -34,6 +46,8 @@ interface Service {
   rate: number;
   min: number;
   max: number;
+  averageTime?: string;
+  description?: string;
   refill?: string;
   cancel?: string;
   pricePer1000Ngn: number;
@@ -48,28 +62,44 @@ interface Order {
   category: string;
   link: string;
   quantity: number;
+  priceUsd: number;
   priceNgn: number;
   status: string;
   startCount?: string;
   remains?: string;
+  charge?: number;
   createdAt: string;
   updatedAt?: string;
 }
 
+const ORDER_TABS: OrderTab[] = ["All", "Pending", "In progress", "Completed", "Partial", "Processing", "Canceled"];
+const REFUND_TABS: RefundTab[] = ["All", "Canceled", "Partial"];
+
 export default function BoostFollowers({ user, onClose, onBalanceChange }: BoostFollowersProps) {
   const [view, setView] = useState<View>("home");
   const [servicesByCategory, setServicesByCategory] = useState<Record<string, Service[]>>({});
-  const [selectedCategory, setSelectedCategory] = useState<string>("");
-  const [selectedService, setSelectedService] = useState<Service | null>(null);
-  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
-  const [link, setLink] = useState("");
-  const [quantity, setQuantity] = useState<string>("");
   const [orders, setOrders] = useState<Order[]>([]);
+  const [refunds, setRefunds] = useState<Order[]>([]);
   const [lastOrder, setLastOrder] = useState<{ orderId: string; priceNgn: number; quantity: number } | null>(null);
   const pollTimer = useRef<NodeJS.Timeout | null>(null);
 
+  // New order form state
+  const [selectedCategory, setSelectedCategory] = useState<string>("");
+  const [selectedServiceId, setSelectedServiceId] = useState<string>("");
+  const [link, setLink] = useState("");
+  const [quantity, setQuantity] = useState<string>("");
+
+  // Search / tabs
+  const [serviceSearch, setServiceSearch] = useState("");
+  const [orderSearch, setOrderSearch] = useState("");
+  const [orderTab, setOrderTab] = useState<OrderTab>("All");
+  const [refundTab, setRefundTab] = useState<RefundTab>("All");
+
   const isLoggedIn = !!user?.id;
+  const allServices = Object.values(servicesByCategory).flat();
+  const selectedService = allServices.find((s) => s.service === selectedServiceId) || null;
+  const categories = Object.keys(servicesByCategory).sort();
 
   const fetchServices = async () => {
     try {
@@ -93,8 +123,12 @@ export default function BoostFollowers({ user, onClose, onBalanceChange }: Boost
   const fetchOrders = async () => {
     if (!user?.id) return;
     try {
-      const res = await apiFetch(`/api/boost/orders/${user.id}`);
-      if (Array.isArray(res)) setOrders(res);
+      const [ords, refs] = await Promise.all([
+        apiFetch(`/api/boost/orders/${user.id}`),
+        apiFetch(`/api/boost/refunds/${user.id}`),
+      ]);
+      if (Array.isArray(ords)) setOrders(ords);
+      if (Array.isArray(refs)) setRefunds(refs);
     } catch (e) {
       console.error("Failed to load boost orders", e);
     }
@@ -108,7 +142,6 @@ export default function BoostFollowers({ user, onClose, onBalanceChange }: Boost
     };
   }, []);
 
-  // Poll pending orders every 10 seconds while on My Orders
   useEffect(() => {
     if (view !== "my-orders" || !user?.id) {
       if (pollTimer.current) clearInterval(pollTimer.current);
@@ -135,40 +168,31 @@ export default function BoostFollowers({ user, onClose, onBalanceChange }: Boost
     };
   }, [view, orders.length, user?.id]);
 
+  // Reset new-order form when category changes
+  useEffect(() => {
+    if (view === "new-order") {
+      setSelectedServiceId("");
+      setQuantity("");
+    }
+  }, [selectedCategory, view]);
+
+  // Auto-quantity min when service selected
+  useEffect(() => {
+    if (selectedService && !quantity) {
+      setQuantity(String(selectedService.min));
+    }
+  }, [selectedServiceId]);
+
   const isPendingStatus = (status?: string) => {
     if (!status) return false;
     const s = status.toLowerCase();
     return s === "pending" || s === "in progress" || s === "in_progress" || s === "processing";
   };
 
-  const allServices = Object.values(servicesByCategory).flat();
-  const filteredCategories = Object.keys(servicesByCategory).filter((cat) =>
-    cat.toLowerCase().includes(search.toLowerCase()) ||
-    servicesByCategory[cat].some((s) =>
-      s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.service.toLowerCase().includes(search.toLowerCase())
-    )
-  );
-
-  const filteredServicesInCategory = selectedCategory
-    ? servicesByCategory[selectedCategory]?.filter(
-        (s) =>
-          s.name.toLowerCase().includes(search.toLowerCase()) ||
-          s.service.toLowerCase().includes(search.toLowerCase())
-      )
-    : [];
-
-  const handleSelectService = (service: Service) => {
-    setSelectedService(service);
-    setQuantity(String(service.min || 100));
-    setView("order");
-  };
-
   const totalNgn = () => {
     if (!selectedService) return 0;
     const qty = Number(quantity) || 0;
-    const usd = (selectedService.rate * qty) / 1000;
-    return Math.ceil(usd * 1500); // rough client calc; backend is authoritative
+    return Math.ceil((selectedService.pricePer1000Ngn * qty) / 1000);
   };
 
   const handlePlaceOrder = async () => {
@@ -176,14 +200,17 @@ export default function BoostFollowers({ user, onClose, onBalanceChange }: Boost
       toast.error("Please sign in");
       return;
     }
-    if (!selectedService) return;
+    if (!selectedService) {
+      toast.error("Please select a service");
+      return;
+    }
     const qty = Number(quantity);
     if (!qty || qty < selectedService.min) {
-      toast.error(`Minimum quantity is ${selectedService.min}`);
+      toast.error(`Minimum quantity is ${selectedService.min.toLocaleString()}`);
       return;
     }
     if (selectedService.max && qty > selectedService.max) {
-      toast.error(`Maximum quantity is ${selectedService.max}`);
+      toast.error(`Maximum quantity is ${selectedService.max.toLocaleString()}`);
       return;
     }
     if (!link.trim()) {
@@ -213,7 +240,7 @@ export default function BoostFollowers({ user, onClose, onBalanceChange }: Boost
         if (onBalanceChange) onBalanceChange(res.newBalance);
         setLink("");
         setQuantity("");
-        setSelectedService(null);
+        setSelectedServiceId("");
         await fetchOrders();
         setView("success");
       }
@@ -231,6 +258,28 @@ export default function BoostFollowers({ user, onClose, onBalanceChange }: Boost
     toast.success("Orders refreshed");
   };
 
+  const filteredServices = allServices.filter(
+    (s) =>
+      s.name.toLowerCase().includes(serviceSearch.toLowerCase()) ||
+      s.service.toLowerCase().includes(serviceSearch.toLowerCase()) ||
+      s.category.toLowerCase().includes(serviceSearch.toLowerCase())
+  );
+
+  const filteredOrders = orders.filter((o) => {
+    const matchesTab = orderTab === "All" || o.status.toLowerCase() === orderTab.toLowerCase();
+    const matchesSearch =
+      !orderSearch ||
+      o.serviceName.toLowerCase().includes(orderSearch.toLowerCase()) ||
+      o.providerOrderId?.toLowerCase().includes(orderSearch.toLowerCase()) ||
+      o.link.toLowerCase().includes(orderSearch.toLowerCase());
+    return matchesTab && matchesSearch;
+  });
+
+  const filteredRefunds = refunds.filter((o) => {
+    const matchesTab = refundTab === "All" || o.status.toLowerCase() === refundTab.toLowerCase();
+    return matchesTab;
+  });
+
   const renderHeader = (title: string, backTo?: View) => (
     <div className="flex items-center gap-3 mb-4">
       <button
@@ -247,7 +296,10 @@ export default function BoostFollowers({ user, onClose, onBalanceChange }: Boost
   const renderHome = () => (
     <div className="space-y-4 animate-in fade-in duration-300">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-black text-gray-900 dark:text-white">Boost Followers</h2>
+        <div>
+          <h2 className="text-xl font-black text-gray-900 dark:text-white">Boost Followers</h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Grow your social media accounts instantly</p>
+        </div>
         <button
           onClick={onClose}
           className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors"
@@ -257,19 +309,29 @@ export default function BoostFollowers({ user, onClose, onBalanceChange }: Boost
         </button>
       </div>
 
-      <button
-        onClick={() => setView("category")}
-        className="w-full flex items-center gap-4 rounded-2xl p-5 text-white shadow-lg active:scale-[0.98] transition-transform bg-gradient-to-r from-violet-500 to-fuchsia-600"
-      >
-        <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center">
-          <TrendingUp className="h-6 w-6" />
-        </div>
-        <div className="text-left flex-1">
-          <div className="font-bold text-lg">Browse Services</div>
-          <div className="text-xs text-white/80">Instagram, TikTok, Twitter & more</div>
-        </div>
-        <ChevronRight className="h-6 w-6" />
-      </button>
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          onClick={() => setView("new-order")}
+          className="flex flex-col items-start gap-3 rounded-2xl p-4 text-white shadow-lg active:scale-[0.98] transition-transform bg-gradient-to-br from-violet-500 to-fuchsia-600"
+        >
+          <ShoppingCart className="h-7 w-7" />
+          <div className="text-left">
+            <div className="font-bold">New Order</div>
+            <div className="text-xs text-white/80">Place a boost order</div>
+          </div>
+        </button>
+
+        <button
+          onClick={() => setView("services")}
+          className="flex flex-col items-start gap-3 rounded-2xl p-4 text-white shadow-lg active:scale-[0.98] transition-transform bg-gradient-to-br from-blue-500 to-indigo-600"
+        >
+          <BadgeDollarSign className="h-7 w-7" />
+          <div className="text-left">
+            <div className="font-bold">Services</div>
+            <div className="text-xs text-white/80">View all services & prices</div>
+          </div>
+        </button>
+      </div>
 
       <div className="space-y-2">
         <button
@@ -282,7 +344,23 @@ export default function BoostFollowers({ user, onClose, onBalanceChange }: Boost
             </div>
             <div className="text-left">
               <div className="font-semibold text-gray-900 dark:text-white">My Orders</div>
-              <div className="text-xs text-gray-500">Track your boost orders</div>
+              <div className="text-xs text-gray-500">Track all your orders</div>
+            </div>
+          </div>
+          <ChevronRight className="h-5 w-5 text-gray-400" />
+        </button>
+
+        <button
+          onClick={() => setView("refunds")}
+          className="w-full flex items-center justify-between rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-4"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900 flex items-center justify-center">
+              <RotateCcw className="h-5 w-5 text-green-600 dark:text-green-400" />
+            </div>
+            <div className="text-left">
+              <div className="font-semibold text-gray-900 dark:text-white">Refunds</div>
+              <div className="text-xs text-gray-500">Canceled & partial orders</div>
             </div>
           </div>
           <ChevronRight className="h-5 w-5 text-gray-400" />
@@ -291,98 +369,164 @@ export default function BoostFollowers({ user, onClose, onBalanceChange }: Boost
 
       <div className="rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900 p-4">
         <p className="text-sm text-blue-800 dark:text-blue-300">
-          <strong>How it works:</strong> Select a service, paste your profile/post link, choose quantity, and pay from your wallet. Delivery starts instantly.
+          <strong>How it works:</strong> Select a service, paste your profile or post link, choose quantity, and pay from your wallet. Delivery usually starts within minutes.
         </p>
       </div>
     </div>
   );
 
-  const renderCategory = () => (
+  const renderServices = () => (
     <div className="animate-in fade-in duration-300">
       {renderHeader("Services", "home")}
       <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
         <Input
           placeholder="Search services..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={serviceSearch}
+          onChange={(e) => setServiceSearch(e.target.value)}
           className="pl-9 bg-white dark:bg-[#101820] border-gray-200 dark:border-gray-800"
         />
       </div>
 
-      {loading && Object.keys(servicesByCategory).length === 0 ? (
+      {loading && allServices.length === 0 ? (
         <div className="flex justify-center py-10">
           <Loader2 className="h-8 w-8 animate-spin text-[#1565C0]" />
         </div>
       ) : (
-        <div className="space-y-4 pb-20">
-          {/* Category selector */}
-          <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
-            {Object.keys(servicesByCategory).map((cat) => (
-              <button
-                key={cat}
-                onClick={() => { setSelectedCategory(cat); setSearch(""); }}
-                className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold transition-colors ${
-                  selectedCategory === cat
-                    ? "bg-[#1565C0] text-white"
-                    : "bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-300"
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-
-          <div className="space-y-3">
-            {filteredServicesInCategory.map((s) => (
-              <button
-                key={s.service}
-                onClick={() => handleSelectService(s)}
-                className="w-full flex items-center justify-between rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-4 text-left hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-100 to-fuchsia-100 dark:from-violet-900 dark:to-fuchsia-900 flex items-center justify-center text-lg">
-                    {getServiceIcon(s.category)}
-                  </div>
-                  <div>
-                    <div className="font-semibold text-gray-900 dark:text-white text-sm">{s.name}</div>
-                    <div className="text-xs text-gray-500">
-                      Min {s.min} · Max {s.max?.toLocaleString()}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-bold text-[#1565C0]">₦{s.pricePer1000Ngn.toLocaleString()}</div>
-                  <div className="text-[10px] text-gray-400">per 1,000</div>
-                </div>
-              </button>
-            ))}
-            {filteredServicesInCategory.length === 0 && (
-              <div className="text-center py-10 text-gray-500 dark:text-gray-400">
-                {search ? "No matching services" : "Select a category"}
-              </div>
-            )}
-          </div>
+        <div className="overflow-x-auto pb-20">
+          <table className="w-full text-xs md:text-sm">
+            <thead className="bg-gray-100 dark:bg-gray-900">
+              <tr>
+                <th className="text-left p-3 font-semibold">ID</th>
+                <th className="text-left p-3 font-semibold">Service</th>
+                <th className="text-left p-3 font-semibold">Rate / 1k</th>
+                <th className="text-left p-3 font-semibold">Min</th>
+                <th className="text-left p-3 font-semibold">Max</th>
+                <th className="text-left p-3 font-semibold hidden md:table-cell">Avg Time</th>
+                <th className="text-left p-3 font-semibold hidden md:table-cell">Description</th>
+                <th className="text-left p-3 font-semibold"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredServices.map((s) => (
+                <tr key={s.service} className="border-b border-gray-100 dark:border-gray-800">
+                  <td className="p-3 font-mono text-xs">{s.service}</td>
+                  <td className="p-3 font-medium">{s.name}</td>
+                  <td className="p-3 font-bold text-[#1565C0]">₦{s.pricePer1000Ngn.toLocaleString()}</td>
+                  <td className="p-3">{s.min.toLocaleString()}</td>
+                  <td className="p-3">{s.max.toLocaleString()}</td>
+                  <td className="p-3 hidden md:table-cell text-gray-500">{s.averageTime || "—"}</td>
+                  <td className="p-3 hidden md:table-cell text-gray-500 max-w-xs truncate">{s.description || "—"}</td>
+                  <td className="p-3">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setSelectedCategory(s.category);
+                        setSelectedServiceId(s.service);
+                        setQuantity(String(s.min));
+                        setView("new-order");
+                      }}
+                      className="bg-[#1565C0] hover:bg-[#0d4f9f] text-white"
+                    >
+                      Order
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+              {filteredServices.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="p-6 text-center text-gray-500">
+                    No services found
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
   );
 
-  const renderOrderForm = () => {
-    if (!selectedService) return null;
+  const renderNewOrder = () => {
+    const categoryServices = selectedCategory ? servicesByCategory[selectedCategory] || [] : [];
     const qty = Number(quantity) || 0;
-    const total = selectedService.pricePer1000Ngn * (qty / 1000);
 
     return (
       <div className="animate-in fade-in duration-300">
-        {renderHeader("Place Order", "category")}
+        {renderHeader("New Order", "home")}
         <div className="space-y-4 pb-20">
           <div className="rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-600 text-white p-4">
-            <div className="text-xs text-white/80 uppercase tracking-wider font-bold">Selected Service</div>
-            <div className="font-bold text-lg">{selectedService.name}</div>
-            <div className="text-xs text-white/80">{selectedService.category}</div>
+            <div className="flex items-center gap-2 text-white/80 text-xs font-bold uppercase tracking-wider">
+              <TrendingUp className="h-4 w-4" />
+              Boost Order
+            </div>
+            <p className="text-xs text-white/80 mt-1">Select service and fill the form below</p>
           </div>
 
+          {/* Category */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
+            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+              <SelectTrigger className="bg-white dark:bg-[#101820] border-gray-200 dark:border-gray-800">
+                <SelectValue placeholder="Select category" />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((cat) => (
+                  <SelectItem key={cat} value={cat}>
+                    {cat}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Service */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Service</label>
+            <Select value={selectedServiceId} onValueChange={setSelectedServiceId} disabled={!selectedCategory}>
+              <SelectTrigger className="bg-white dark:bg-[#101820] border-gray-200 dark:border-gray-800">
+                <SelectValue placeholder="Select service" />
+              </SelectTrigger>
+              <SelectContent>
+                {categoryServices.map((s) => (
+                  <SelectItem key={s.service} value={s.service}>
+                    {s.name} — ₦{s.pricePer1000Ngn.toLocaleString()} / 1k
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {selectedService && (
+            <div className="rounded-xl bg-gray-50 dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-3 text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-gray-500">ID</span>
+                <span className="font-mono">{selectedService.service}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Rate per 1,000</span>
+                <span className="font-bold">₦{selectedService.pricePer1000Ngn.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Min / Max</span>
+                <span>{selectedService.min.toLocaleString()} — {selectedService.max.toLocaleString()}</span>
+              </div>
+              {selectedService.averageTime && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Average time</span>
+                  <span>{selectedService.averageTime}</span>
+                </div>
+              )}
+              {selectedService.description && (
+                <div className="pt-1 border-t border-gray-200 dark:border-gray-700">
+                  <span className="text-gray-500">Description: </span>
+                  <span className="text-gray-700 dark:text-gray-300">{selectedService.description}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Link */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Link</label>
             <Input
@@ -391,51 +535,54 @@ export default function BoostFollowers({ user, onClose, onBalanceChange }: Boost
               onChange={(e) => setLink(e.target.value)}
               className="h-12 bg-white dark:bg-[#101820] border-gray-200 dark:border-gray-800"
             />
-            <p className="text-xs text-gray-500">Paste the profile or post URL you want to boost.</p>
           </div>
 
+          {/* Quantity */}
           <div className="space-y-2">
             <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Quantity</label>
             <Input
               type="number"
-              min={selectedService.min}
-              max={selectedService.max}
+              min={selectedService?.min || 0}
+              max={selectedService?.max || 0}
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
               className="h-12 bg-white dark:bg-[#101820] border-gray-200 dark:border-gray-800"
             />
-            <div className="flex justify-between text-xs text-gray-500">
-              <span>Min: {selectedService.min.toLocaleString()}</span>
-              <span>Max: {selectedService.max?.toLocaleString()}</span>
-            </div>
+            {selectedService && (
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>Min: {selectedService.min.toLocaleString()}</span>
+                <span>Max: {selectedService.max.toLocaleString()}</span>
+              </div>
+            )}
           </div>
 
+          {/* Charge summary */}
           <div className="rounded-xl bg-gray-50 dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-4 space-y-2">
             <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Rate</span>
-              <span className="font-medium">₦{selectedService.pricePer1000Ngn.toLocaleString()} / 1,000</span>
+              <span className="text-gray-500">Wallet balance</span>
+              <span className="font-medium">₦{Math.max(0, user?.balance || 0).toLocaleString()}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">Quantity</span>
               <span className="font-medium">{qty.toLocaleString()}</span>
             </div>
             <div className="border-t border-gray-200 dark:border-gray-700 pt-2 flex justify-between items-center">
-              <span className="font-semibold text-gray-900 dark:text-white">Total</span>
-              <span className="text-xl font-black text-[#1565C0]">₦{Math.ceil(total).toLocaleString()}</span>
+              <span className="font-semibold text-gray-900 dark:text-white">Charge</span>
+              <span className="text-xl font-black text-[#1565C0]">₦{totalNgn().toLocaleString()}</span>
             </div>
           </div>
 
           <Button
             onClick={handlePlaceOrder}
-            disabled={loading || !link.trim() || qty < selectedService.min}
+            disabled={loading || !selectedService || !link.trim() || qty < (selectedService?.min || 1)}
             className="w-full h-12 bg-[#1565C0] hover:bg-[#0d4f9f] text-white font-bold rounded-xl"
           >
             {loading ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : (
               <>
-                <ShoppingCart className="h-4 w-4 mr-2" />
-                Pay & Place Order
+                <Wallet className="h-4 w-4 mr-2" />
+                Submit Order
               </>
             )}
           </Button>
@@ -466,17 +613,13 @@ export default function BoostFollowers({ user, onClose, onBalanceChange }: Boost
             <span className="font-medium">{lastOrder.quantity.toLocaleString()}</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Paid</span>
+            <span className="text-gray-500">Charge</span>
             <span className="font-bold text-[#1565C0]">₦{lastOrder.priceNgn.toLocaleString()}</span>
           </div>
         </div>
       )}
       <div className="flex gap-3 w-full max-w-xs">
-        <Button
-          variant="outline"
-          onClick={() => setView("home")}
-          className="flex-1 h-11 rounded-xl"
-        >
+        <Button variant="outline" onClick={() => setView("home")} className="flex-1 h-11 rounded-xl">
           Home
         </Button>
         <Button
@@ -492,10 +635,35 @@ export default function BoostFollowers({ user, onClose, onBalanceChange }: Boost
   const renderMyOrders = () => (
     <div className="animate-in fade-in duration-300">
       {renderHeader("My Orders", "home")}
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          Status updates happen automatically.
-        </p>
+
+      {/* Tabs */}
+      <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 mb-3">
+        {ORDER_TABS.map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setOrderTab(tab)}
+            className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${
+              orderTab === tab
+                ? "bg-[#1565C0] text-white"
+                : "bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-300"
+            }`}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+
+      <div className="relative mb-3">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <Input
+          placeholder="Search orders..."
+          value={orderSearch}
+          onChange={(e) => setOrderSearch(e.target.value)}
+          className="pl-9 bg-white dark:bg-[#101820] border-gray-200 dark:border-gray-800"
+        />
+      </div>
+
+      <div className="flex items-center justify-end mb-3">
         <button
           onClick={refreshOrders}
           disabled={loading}
@@ -505,49 +673,107 @@ export default function BoostFollowers({ user, onClose, onBalanceChange }: Boost
           Refresh
         </button>
       </div>
-      <div className="space-y-3 pb-20">
-        {orders.map((o) => (
-          <div
-            key={o._id || o.providerOrderId}
-            className="rounded-xl bg-white dark:bg-[#101820] border border-gray-200 dark:border-gray-800 p-4"
-          >
-            <div className="flex items-center justify-between mb-2">
-              <div className="font-bold text-gray-900 dark:text-white text-sm">{o.serviceName}</div>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getStatusClass(o.status)}`}>
-                {o.status}
-              </span>
-            </div>
-            <div className="text-xs text-gray-500 mb-2">
-              {o.category} · {new Date(o.createdAt).toLocaleString()}
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-xs text-gray-500">Quantity</div>
-                <div className="font-semibold text-sm">{o.quantity.toLocaleString()}</div>
-              </div>
-              <div className="text-right">
-                <div className="text-xs text-gray-500">Paid</div>
-                <div className="font-bold text-[#1565C0]">₦{o.priceNgn.toLocaleString()}</div>
-              </div>
-            </div>
-            {o.providerOrderId && (
-              <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between">
-                <span className="text-xs font-mono text-gray-500">ID: {o.providerOrderId}</span>
-                <button
-                  onClick={() => window.open(o.link, "_blank", "noopener,noreferrer")}
-                  className="flex items-center gap-1 text-xs text-[#1565C0] hover:underline"
-                >
-                  <ExternalLink className="h-3 w-3" /> Link
-                </button>
-              </div>
+
+      <div className="overflow-x-auto pb-20">
+        <table className="w-full text-xs md:text-sm">
+          <thead className="bg-gray-100 dark:bg-gray-900">
+            <tr>
+              <th className="text-left p-3 font-semibold">ID</th>
+              <th className="text-left p-3 font-semibold">Date</th>
+              <th className="text-left p-3 font-semibold">Link</th>
+              <th className="text-left p-3 font-semibold">Charge</th>
+              <th className="text-left p-3 font-semibold">Start</th>
+              <th className="text-left p-3 font-semibold">Qty</th>
+              <th className="text-left p-3 font-semibold">Service</th>
+              <th className="text-left p-3 font-semibold">Status</th>
+              <th className="text-left p-3 font-semibold">Remains</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredOrders.map((o) => (
+              <tr key={o._id || o.providerOrderId} className="border-b border-gray-100 dark:border-gray-800">
+                <td className="p-3 font-mono text-xs">{o.providerOrderId || "—"}</td>
+                <td className="p-3">{new Date(o.createdAt).toLocaleString()}</td>
+                <td className="p-3 max-w-[120px] truncate">
+                  <button
+                    onClick={() => window.open(o.link, "_blank", "noopener,noreferrer")}
+                    className="text-[#1565C0] hover:underline flex items-center gap-1"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    <span className="truncate">{o.link}</span>
+                  </button>
+                </td>
+                <td className="p-3 font-bold">₦{o.priceNgn.toLocaleString()}</td>
+                <td className="p-3">{o.startCount ?? "—"}</td>
+                <td className="p-3">{o.quantity.toLocaleString()}</td>
+                <td className="p-3">{o.serviceName}</td>
+                <td className={`p-3 capitalize ${getStatusClass(o.status)}`}>{o.status}</td>
+                <td className="p-3">{o.remains ?? "—"}</td>
+              </tr>
+            ))}
+            {filteredOrders.length === 0 && (
+              <tr>
+                <td colSpan={9} className="p-6 text-center text-gray-500">
+                  No orders found
+                </td>
+              </tr>
             )}
-          </div>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  const renderRefunds = () => (
+    <div className="animate-in fade-in duration-300">
+      {renderHeader("Refunds", "home")}
+
+      <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 mb-3">
+        {REFUND_TABS.map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setRefundTab(tab)}
+            className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${
+              refundTab === tab
+                ? "bg-[#1565C0] text-white"
+                : "bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-300"
+            }`}
+          >
+            {tab}
+          </button>
         ))}
-        {orders.length === 0 && (
-          <div className="text-center py-10 text-gray-500 dark:text-gray-400">
-            No orders yet. Browse services to get started.
-          </div>
-        )}
+      </div>
+
+      <div className="overflow-x-auto pb-20">
+        <table className="w-full text-xs md:text-sm">
+          <thead className="bg-gray-100 dark:bg-gray-900">
+            <tr>
+              <th className="text-left p-3 font-semibold">Order ID</th>
+              <th className="text-left p-3 font-semibold">Refunded Amount</th>
+              <th className="text-left p-3 font-semibold">Order Status</th>
+              <th className="text-left p-3 font-semibold">Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredRefunds.map((o) => (
+              <tr key={o._id || o.providerOrderId} className="border-b border-gray-100 dark:border-gray-800">
+                <td className="p-3 font-mono text-xs">{o.providerOrderId || "—"}</td>
+                <td className="p-3 font-bold text-green-600">
+                  {o.status.toLowerCase() === "partial" ? `Partial refund` : "—"}
+                </td>
+                <td className={`p-3 capitalize ${getStatusClass(o.status)}`}>{o.status}</td>
+                <td className="p-3">{new Date(o.createdAt).toLocaleString()}</td>
+              </tr>
+            ))}
+            {filteredRefunds.length === 0 && (
+              <tr>
+                <td colSpan={4} className="p-6 text-center text-gray-500">
+                  No refunds found
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -556,41 +782,32 @@ export default function BoostFollowers({ user, onClose, onBalanceChange }: Boost
     <div className="fixed inset-0 z-40 bg-gray-50 dark:bg-black flex flex-col pt-[60px] pb-[80px]">
       <div className="flex-1 overflow-y-auto p-4">
         {view === "home" && renderHome()}
-        {view === "category" && renderCategory()}
-        {view === "order" && renderOrderForm()}
+        {view === "services" && renderServices()}
+        {view === "new-order" && renderNewOrder()}
         {view === "success" && renderSuccess()}
         {view === "my-orders" && renderMyOrders()}
+        {view === "refunds" && renderRefunds()}
       </div>
     </div>
   );
 }
 
-function getServiceIcon(category: string) {
-  const c = category.toLowerCase();
-  if (c.includes("instagram")) return "📸";
-  if (c.includes("tiktok")) return "🎵";
-  if (c.includes("twitter") || c.includes("x")) return "🐦";
-  if (c.includes("youtube")) return "▶️";
-  if (c.includes("facebook")) return "📘";
-  if (c.includes("telegram")) return "✈️";
-  if (c.includes("whatsapp")) return "💬";
-  if (c.includes("spotify")) return "🎧";
-  return "🚀";
-}
-
 function getStatusClass(status?: string) {
   const s = (status || "").toLowerCase();
   if (s === "completed" || s === "success" || s === "done") {
-    return "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300";
+    return "text-green-600 dark:text-green-400 font-semibold";
   }
   if (s === "pending" || s === "in progress" || s === "processing") {
-    return "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300";
+    return "text-amber-600 dark:text-amber-400 font-semibold";
+  }
+  if (s === "partial") {
+    return "text-blue-600 dark:text-blue-400 font-semibold";
   }
   if (s === "cancelled" || s === "canceled" || s === "refunded") {
-    return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300";
+    return "text-gray-500 dark:text-gray-400";
   }
   if (s === "failed") {
-    return "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300";
+    return "text-red-600 dark:text-red-400 font-semibold";
   }
-  return "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300";
+  return "text-blue-600 dark:text-blue-400 font-semibold";
 }

@@ -67,6 +67,7 @@ interface NumberSettings {
   markupPercentage: number;
   exchangeRate: number;
   boostMarkupPercentage: number;
+  boostFlatMarkupNgn: number;
 }
 
 export default function AdminNumbers() {
@@ -75,7 +76,7 @@ export default function AdminNumbers() {
   const [activations, setActivations] = useState<Activation[]>([]);
   const [rentals, setRentals] = useState<Rental[]>([]);
   const [transactions, setTransactions] = useState<NumberTransaction[]>([]);
-  const [settings, setSettings] = useState<NumberSettings>({ markupPercentage: 0, exchangeRate: 1500, boostMarkupPercentage: 0 });
+  const [settings, setSettings] = useState<NumberSettings>({ markupPercentage: 0, exchangeRate: 1500, boostMarkupPercentage: 0, boostFlatMarkupNgn: 0 });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -323,6 +324,14 @@ export default function AdminNumbers() {
           type="number"
           value={settings.boostMarkupPercentage}
           onChange={(e) => setSettings((s) => ({ ...s, boostMarkupPercentage: Number(e.target.value) }))}
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium mb-1">Boost Flat Markup (₦ per 1,000)</label>
+        <Input
+          type="number"
+          value={settings.boostFlatMarkupNgn}
+          onChange={(e) => setSettings((s) => ({ ...s, boostFlatMarkupNgn: Number(e.target.value) }))}
         />
       </div>
       <Button onClick={saveSettings} disabled={saving} className="bg-[#1565C0] hover:bg-[#0d4f9f]">

@@ -115,6 +115,7 @@ export interface ISettings extends Document {
   markupPercentage: number;
   exchangeRate: number;
   boostMarkupPercentage: number;
+  boostFlatMarkupNgn: number;
   updatedAt?: Date;
 }
 
@@ -407,6 +408,7 @@ const SettingsSchema = new Schema<ISettings>({
   markupPercentage: { type: Number, default: 0 },
   exchangeRate: { type: Number, default: 1500 },
   boostMarkupPercentage: { type: Number, default: 0 },
+  boostFlatMarkupNgn: { type: Number, default: 0 },
   updatedAt: { type: Date, default: Date.now },
 });
 
