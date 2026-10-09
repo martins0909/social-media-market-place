@@ -8,7 +8,7 @@ import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 import crypto from "crypto";
 import axios from "axios";
-import { User, Admin, Cart, Payment, Product, CatalogProduct, PurchaseHistory, CatalogCategory, ReferralBonus, NumberActivation, NumberRental, NumberTransaction, Settings, Transfer, BoostOrder } from "./models";
+import { User, Admin, Cart, Payment, Product, CatalogProduct, PurchaseHistory, CatalogCategory, ReferralBonus, NumberActivation, NumberRental, NumberTransaction, Settings, Transfer, BoostOrder, BoostSettings } from "./models";
 import paymentsRouter from "./routes/payments";
 
 const app = express();
@@ -1438,15 +1438,16 @@ const BLOOMSMS_API_KEY = process.env.BLOOMSMS_API_KEY || "";
 async function ensureSettings() {
   let settings = await Settings.findOne().exec();
   if (!settings) {
-    settings = await Settings.create({ markupPercentage: 0, exchangeRate: 1500, boostMarkupPercentage: 0, boostFlatMarkupNgn: 0 });
+    settings = await Settings.create({ markupPercentage: 0, exchangeRate: 1500 });
   }
-  if (typeof settings.boostMarkupPercentage !== "number") {
-    settings.boostMarkupPercentage = 0;
+  return settings;
+}
+
+async function ensureBoostSettings() {
+  let settings = await BoostSettings.findOne().exec();
+  if (!settings) {
+    settings = await BoostSettings.create({ exchangeRate: 1, markupPercentage: 0, flatMarkupNgn: 0 });
   }
-  if (typeof settings.boostFlatMarkupNgn !== "number") {
-    settings.boostFlatMarkupNgn = 0;
-  }
-  if (settings.isModified()) await settings.save();
   return settings;
 }
 
@@ -1496,8 +1497,6 @@ app.get("/api/numbers/settings", async (req: Request, res: Response) => {
     res.json({
       markupPercentage: settings.markupPercentage,
       exchangeRate: settings.exchangeRate,
-      boostMarkupPercentage: settings.boostMarkupPercentage,
-      boostFlatMarkupNgn: settings.boostFlatMarkupNgn,
     });
   } catch (err) {
     console.error("Error fetching number settings:", err);
@@ -1508,19 +1507,15 @@ app.get("/api/numbers/settings", async (req: Request, res: Response) => {
 // Settings: update (admin only, protected by basic admin auth if desired)
 app.put("/api/numbers/settings", async (req: Request, res: Response) => {
   try {
-    const { markupPercentage, exchangeRate, boostMarkupPercentage, boostFlatMarkupNgn } = req.body;
+    const { markupPercentage, exchangeRate } = req.body;
     const settings = await ensureSettings();
     if (markupPercentage !== undefined) settings.markupPercentage = Number(markupPercentage);
     if (exchangeRate !== undefined) settings.exchangeRate = Number(exchangeRate);
-    if (boostMarkupPercentage !== undefined) settings.boostMarkupPercentage = Number(boostMarkupPercentage);
-    if (boostFlatMarkupNgn !== undefined) settings.boostFlatMarkupNgn = Number(boostFlatMarkupNgn);
     settings.updatedAt = new Date();
     await settings.save();
     res.json({
       markupPercentage: settings.markupPercentage,
       exchangeRate: settings.exchangeRate,
-      boostMarkupPercentage: settings.boostMarkupPercentage,
-      boostFlatMarkupNgn: settings.boostFlatMarkupNgn,
     });
   } catch (err) {
     console.error("Error updating number settings:", err);
@@ -2441,6 +2436,41 @@ app.post("/api/numbers/daisy/webhook", async (req: Request, res: Response) => {
 const RSS_BASE = "https://reallysimplesocial.com/api/v2";
 const RSS_API_KEY = process.env.RSS_API_KEY || "";
 
+// Boost settings endpoints (independent from Buy Numbers settings)
+app.get("/api/boost/settings", async (req: Request, res: Response) => {
+  try {
+    const settings = await ensureBoostSettings();
+    res.json({
+      exchangeRate: settings.exchangeRate,
+      markupPercentage: settings.markupPercentage,
+      flatMarkupNgn: settings.flatMarkupNgn,
+    });
+  } catch (err) {
+    console.error("Error fetching boost settings:", err);
+    res.status(500).json({ error: "Failed to fetch boost settings" });
+  }
+});
+
+app.put("/api/boost/settings", async (req: Request, res: Response) => {
+  try {
+    const { exchangeRate, markupPercentage, flatMarkupNgn } = req.body;
+    const settings = await ensureBoostSettings();
+    if (exchangeRate !== undefined) settings.exchangeRate = Number(exchangeRate);
+    if (markupPercentage !== undefined) settings.markupPercentage = Number(markupPercentage);
+    if (flatMarkupNgn !== undefined) settings.flatMarkupNgn = Number(flatMarkupNgn);
+    settings.updatedAt = new Date();
+    await settings.save();
+    res.json({
+      exchangeRate: settings.exchangeRate,
+      markupPercentage: settings.markupPercentage,
+      flatMarkupNgn: settings.flatMarkupNgn,
+    });
+  } catch (err) {
+    console.error("Error updating boost settings:", err);
+    res.status(500).json({ error: "Failed to update boost settings" });
+  }
+});
+
 interface RssService {
   service: string;
   name: string;
@@ -2496,9 +2526,10 @@ async function rssRequest(action: string, params: Record<string, string | number
   return data;
 }
 
-function calculateBoostNgnPrice(usd: number, exchangeRate: number, markupPercentage: number, flatMarkupNgnPer1000 = 0) {
-  // flatMarkupNgnPer1000 is added to the per-1000 selling price
-  const per1000Base = usd * exchangeRate * (1 + markupPercentage / 100);
+function calculateBoostNgnPrice(ratePer1000: number, exchangeRate: number, markupPercentage: number, flatMarkupNgnPer1000 = 0) {
+  // ratePer1000 is the provider's rate per 1,000 units
+  // Selling price per 1,000 = (ratePer1000 * exchangeRate * (1 + markup%)) + flatMarkupNgnPer1000
+  const per1000Base = ratePer1000 * exchangeRate * (1 + markupPercentage / 100);
   return Math.ceil(per1000Base + flatMarkupNgnPer1000);
 }
 
@@ -2581,12 +2612,12 @@ app.get("/api/boost/services", async (req: Request, res: Response) => {
       cacheSet(cacheKey, services, 10 * 60 * 1000); // cache 10 minutes
     }
 
-    const settings = await ensureSettings();
+    const settings = await ensureBoostSettings();
     const enriched = services.map((s) => {
       const rate = Number(s.rate) || 0;
       const min = Number(s.min) || 0;
       const max = Number(s.max) || 0;
-      const pricePer1000Ngn = calculateBoostNgnPrice(rate, settings.exchangeRate, settings.boostMarkupPercentage, settings.boostFlatMarkupNgn);
+      const pricePer1000Ngn = calculateBoostNgnPrice(rate, settings.exchangeRate, settings.markupPercentage, settings.flatMarkupNgn);
       const minPriceNgn = Math.ceil((pricePer1000Ngn * min) / 1000);
       return {
         ...s,
@@ -2618,10 +2649,10 @@ app.post("/api/boost/orders", async (req: Request, res: Response) => {
     const user = await User.findById(userId).exec();
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    const settings = await ensureSettings();
+    const settings = await ensureBoostSettings();
     const qty = Number(quantity);
     const rate = Number(ratePer1000Usd) || 0;
-    const pricePer1000Ngn = calculateBoostNgnPrice(rate, settings.exchangeRate, settings.boostMarkupPercentage, settings.boostFlatMarkupNgn);
+    const pricePer1000Ngn = calculateBoostNgnPrice(rate, settings.exchangeRate, settings.markupPercentage, settings.flatMarkupNgn);
     const priceUsd = (rate * qty) / 1000;
     const priceNgn = Math.ceil((pricePer1000Ngn * qty) / 1000);
 

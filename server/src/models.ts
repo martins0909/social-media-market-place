@@ -114,8 +114,13 @@ export interface INumberTransaction extends Document {
 export interface ISettings extends Document {
   markupPercentage: number;
   exchangeRate: number;
-  boostMarkupPercentage: number;
-  boostFlatMarkupNgn: number;
+  updatedAt?: Date;
+}
+
+export interface IBoostSettings extends Document {
+  exchangeRate: number;
+  markupPercentage: number;
+  flatMarkupNgn: number;
   updatedAt?: Date;
 }
 
@@ -407,8 +412,13 @@ NumberTransactionSchema.index({ createdAt: -1 });
 const SettingsSchema = new Schema<ISettings>({
   markupPercentage: { type: Number, default: 0 },
   exchangeRate: { type: Number, default: 1500 },
-  boostMarkupPercentage: { type: Number, default: 0 },
-  boostFlatMarkupNgn: { type: Number, default: 0 },
+  updatedAt: { type: Date, default: Date.now },
+});
+
+const BoostSettingsSchema = new Schema<IBoostSettings>({
+  exchangeRate: { type: Number, default: 1 }, // Default 1 because RSS usually returns NGN rates
+  markupPercentage: { type: Number, default: 0 },
+  flatMarkupNgn: { type: Number, default: 0 },
   updatedAt: { type: Date, default: Date.now },
 });
 
@@ -469,3 +479,4 @@ export const NumberTransaction = mongoose.model<INumberTransaction>("NumberTrans
 export const Settings = mongoose.model<ISettings>("Settings", SettingsSchema);
 export const Transfer = mongoose.model<ITransfer>("Transfer", TransferSchema);
 export const BoostOrder = mongoose.model<IBoostOrder>("BoostOrder", BoostOrderSchema);
+export const BoostSettings = mongoose.model<IBoostSettings>("BoostSettings", BoostSettingsSchema);

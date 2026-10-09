@@ -52,10 +52,9 @@ interface BoostOrder {
 }
 
 interface BoostSettings {
-  markupPercentage: number;
   exchangeRate: number;
-  boostMarkupPercentage: number;
-  boostFlatMarkupNgn: number;
+  markupPercentage: number;
+  flatMarkupNgn: number;
 }
 
 type AdminBoostTab = "orders" | "services" | "refunds";
@@ -68,10 +67,9 @@ export default function AdminBoost() {
   const [refunds, setRefunds] = useState<BoostOrder[]>([]);
   const [orderSearch, setOrderSearch] = useState("");
   const [settings, setSettings] = useState<BoostSettings>({
+    exchangeRate: 1,
     markupPercentage: 0,
-    exchangeRate: 1500,
-    boostMarkupPercentage: 0,
-    boostFlatMarkupNgn: 0,
+    flatMarkupNgn: 0,
   });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -84,7 +82,7 @@ export default function AdminBoost() {
         apiFetch("/api/boost/admin/orders"),
         apiFetch("/api/boost/admin/refunds"),
         apiFetch("/api/boost/services"),
-        apiFetch("/api/numbers/settings"),
+        apiFetch("/api/boost/settings"),
       ]);
       setOrders(ords || []);
       setRefunds(refs || []);
@@ -107,7 +105,7 @@ export default function AdminBoost() {
   const saveSettings = async () => {
     setSaving(true);
     try {
-      await apiFetch("/api/numbers/settings", {
+      await apiFetch("/api/boost/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(settings),
@@ -186,27 +184,28 @@ export default function AdminBoost() {
       </h3>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div>
-          <label className="block text-sm font-medium mb-1">Exchange Rate (USD → NGN)</label>
+          <label className="block text-sm font-medium mb-1">Exchange Rate (provider currency → NGN)</label>
           <Input
             type="number"
             value={settings.exchangeRate}
             onChange={(e) => setSettings((s) => ({ ...s, exchangeRate: Number(e.target.value) }))}
           />
+          <p className="text-xs text-gray-500 mt-1">Use 1 if provider already returns NGN rates.</p>
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Boost Markup (%)</label>
+          <label className="block text-sm font-medium mb-1">Markup (%)</label>
           <Input
             type="number"
-            value={settings.boostMarkupPercentage}
-            onChange={(e) => setSettings((s) => ({ ...s, boostMarkupPercentage: Number(e.target.value) }))}
+            value={settings.markupPercentage}
+            onChange={(e) => setSettings((s) => ({ ...s, markupPercentage: Number(e.target.value) }))}
           />
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Flat Markup (₦ per 1,000)</label>
           <Input
             type="number"
-            value={settings.boostFlatMarkupNgn}
-            onChange={(e) => setSettings((s) => ({ ...s, boostFlatMarkupNgn: Number(e.target.value) }))}
+            value={settings.flatMarkupNgn}
+            onChange={(e) => setSettings((s) => ({ ...s, flatMarkupNgn: Number(e.target.value) }))}
           />
         </div>
         <div className="flex items-end">
