@@ -2943,15 +2943,7 @@ const Shop = () => {
               <Zap className="mr-3 h-5 w-5" />
               {isCreatingQuickPay ? "Preparing Quick Pay..." : "Quick Pay"}
             </Button>
-            <Button
-              onClick={initiateErcasPayment}
-              disabled={isCreatingTopup}
-              variant="outline"
-              className="w-full h-14 justify-start px-4 text-left font-semibold text-base border-2 hover:bg-gray-50 dark:hover:bg-[#18181b]"
-            >
-              <CreditCard className="mr-3 h-5 w-5" />
-              {isCreatingTopup ? "Preparing Instant Payment..." : "Instant Payment (Ercaspay)"}
-            </Button>
+            {/* Instant Payment (Ercaspay) button temporarily removed while API key issue is resolved */}
             <Button onClick={() => {
                 setShowPaymentMethodDialog(false);
                 setShowManualFundsDialog(true);
