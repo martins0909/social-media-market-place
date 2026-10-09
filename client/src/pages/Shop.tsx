@@ -175,6 +175,14 @@ const Shop = () => {
   const [transferAmount, setTransferAmount] = useState("");
   const [transferLoading, setTransferLoading] = useState(false);
 
+  const cleanErcasUrlParams = () => {
+    const url = new URL(window.location.href);
+    ["status", "paymentStatus", "transactionStatus", "transRef", "transactionReference", "transactionRef", "reference", "paymentReference", "ercasAmount", "amount"].forEach((key) => {
+      url.searchParams.delete(key);
+    });
+    window.history.replaceState({}, "", url.toString());
+  };
+
   const BrandedLoader = () => (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white/95 dark:bg-black/95 backdrop-blur-md">
       <div className="h-16 w-16 rounded-full border-4 border-[#1565C0]/20 border-t-[#1565C0] animate-spin mb-5" />
@@ -780,31 +788,44 @@ const Shop = () => {
 
     const params = new URLSearchParams(window.location.search);
     let pref = params.get("pref");
-    const ercasStatus = params.get("status");
-    const ercasTransRef = params.get("transRef");
-    const ercasAmountParam = params.get("ercasAmount");
 
-    // Handle Ercas redirect first (status=PAID & transRef present, no pref)
-    if (!pref && ercasStatus === "PAID" && ercasTransRef) {
+    // Ercaspay (Phoenix Wallet) may return status/ref under different query names
+    const ercasStatus =
+      params.get("status") ||
+      params.get("paymentStatus") ||
+      params.get("transactionStatus") ||
+      "";
+    const ercasTransRef =
+      params.get("transRef") ||
+      params.get("transactionReference") ||
+      params.get("transactionRef") ||
+      params.get("reference") ||
+      params.get("paymentReference") ||
+      "";
+    const ercasAmountParam = params.get("ercasAmount") || params.get("amount") || "";
+
+    const isErcasSuccess =
+      !pref &&
+      ercasTransRef &&
+      ["PAID", "SUCCESS", "SUCCESSFUL", "COMPLETED"].includes(ercasStatus.toUpperCase());
+
+    // Handle Ercas redirect first
+    if (isErcasSuccess) {
       const handledKey = `ercas_handled_${ercasTransRef}`;
       const processingKey = `ercas_processing_${ercasTransRef}`;
 
       // If we've already handled this transRef before (even across refreshes), skip and clean URL
       if (sessionStorage.getItem(handledKey) === '1' || processedTransactions.has(ercasTransRef) || ercasRedirectProcessed) {
         console.log("Ercas redirect already handled. Skipping.", ercasTransRef);
-        const url = new URL(window.location.href);
-        url.searchParams.delete("status");
-        url.searchParams.delete("transRef");
-        url.searchParams.delete("ercasAmount");
-        window.history.replaceState({}, "", url.toString());
+        cleanErcasUrlParams();
         return;
       }
 
       // Mark as processed for this session
-  setErcasRedirectProcessed(true);
-  setProcessedTransactions(prev => new Set(prev).add(ercasTransRef));
-  // Mark as processing in this browser session (survives refresh)
-  sessionStorage.setItem(processingKey, '1');
+      setErcasRedirectProcessed(true);
+      setProcessedTransactions(prev => new Set(prev).add(ercasTransRef));
+      // Mark as processing in this browser session (survives refresh)
+      sessionStorage.setItem(processingKey, '1');
 
       (async () => {
         setIsVerifyingTopup(true);
@@ -868,11 +889,7 @@ const Shop = () => {
             // Mark handled, clear processing flag and cleanup URL params IMMEDIATELY after processing
             sessionStorage.setItem(handledKey, '1');
             sessionStorage.removeItem(processingKey);
-            const url = new URL(window.location.href);
-            url.searchParams.delete("status");
-            url.searchParams.delete("transRef");
-            url.searchParams.delete("ercasAmount");
-            window.history.replaceState({}, "", url.toString());
+            cleanErcasUrlParams();
             localStorage.removeItem("latest_topup");
           } else {
             toast.error(error || message || "Failed to process payment");
@@ -2925,6 +2942,15 @@ const Shop = () => {
             <Button onClick={handleQuickPay} disabled={isCreatingQuickPay} className="w-full h-14 justify-start px-4 text-left font-semibold text-base bg-[#1565C0] hover:bg-[#0d4f9f] shadow-md">
               <Zap className="mr-3 h-5 w-5" />
               {isCreatingQuickPay ? "Preparing Quick Pay..." : "Quick Pay"}
+            </Button>
+            <Button
+              onClick={initiateErcasPayment}
+              disabled={isCreatingTopup}
+              variant="outline"
+              className="w-full h-14 justify-start px-4 text-left font-semibold text-base border-2 hover:bg-gray-50 dark:hover:bg-[#18181b]"
+            >
+              <CreditCard className="mr-3 h-5 w-5" />
+              {isCreatingTopup ? "Preparing Instant Payment..." : "Instant Payment (Ercaspay)"}
             </Button>
             <Button onClick={() => {
                 setShowPaymentMethodDialog(false);

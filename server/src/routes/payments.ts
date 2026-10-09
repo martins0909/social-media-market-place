@@ -1,14 +1,16 @@
 import express from 'express';
 import axios from 'axios';
 import crypto from 'crypto';
-import Ercaspay from '@capitalsage/ercaspay-nodejs';
 import { Payment, User } from '../models';
 
 const router = express.Router();
 
 // Validate Ercaspay configuration
 const ECRS_AUTH_KEY = (process.env.ECRS_API_KEY || process.env.ECRS_SECRET_KEY || '').trim();
-const ECRS_API_BASE = process.env.ECRS_API_BASE || 'https://api.ercaspay.com';
+// New Phoenix Wallet base URLs from Ercaspay support:
+// Staging: https://api.staging.phoenix-wallet.ercaspay.com/api/v1
+// Live:    https://api.phoenix-wallet.ercaspay.com/api/v1
+const ECRS_API_BASE = (process.env.ECRS_API_BASE || 'https://api.phoenix-wallet.ercaspay.com/api/v1').replace(/\/$/, '');
 if (!ECRS_AUTH_KEY) {
   console.error('FATAL: Ercaspay key not set. Set ECRS_API_KEY (preferred) or ECRS_SECRET_KEY.');
 }
@@ -68,11 +70,38 @@ function getNameParts(rawName?: string): { firstName: string; lastName: string }
   };
 }
 
-// Initialize Ercaspay client - MUST use baseURL (uppercase) not baseUrl
-const ercaspay = new Ercaspay({
-  baseURL: ECRS_API_BASE,
-  secretKey: ECRS_AUTH_KEY,
-});
+// Helper to generate a payment reference UUID (replaces SDK helper)
+function generatePaymentReferenceUuid(): string {
+  return `${Date.now()}-${crypto.randomUUID()}`;
+}
+
+// Generic Ercaspay request helper with standardized response shape
+async function ercasRequest(method: 'GET' | 'POST', path: string, data?: any) {
+  const url = `${ECRS_API_BASE}${path.startsWith('/') ? path : `/${path}`}`;
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${ECRS_AUTH_KEY}`,
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  };
+
+  try {
+    const res = await axios({ method, url, data, headers, timeout: 30000 });
+    return {
+      requestSuccessful: res.data?.requestSuccessful ?? true,
+      responseCode: res.data?.responseCode ?? res.data?.code ?? 'success',
+      responseMessage: res.data?.responseMessage ?? res.data?.message ?? 'OK',
+      responseBody: res.data?.responseBody ?? res.data?.data ?? res.data,
+      raw: res.data,
+    };
+  } catch (err: any) {
+    console.error(`Ercaspay ${method} ${path} error:`, err.response?.data || err.message);
+    throw {
+      status: err.response?.status,
+      message: err.response?.data?.errorMessage || err.response?.data?.message || err.response?.data?.error || err.message,
+      responseData: err.response?.data,
+    };
+  }
+}
 
 /**
  * POST /api/payments/pocketfi/initiate
@@ -238,7 +267,7 @@ router.post('/ercas/initiate', async (req, res) => {
     }
 
     // Generate unique payment reference
-    const paymentReference = ercaspay.generatePaymentReferenceUuid();
+    const paymentReference = generatePaymentReferenceUuid();
 
     // Build redirect URL to return customer to /shop with our paymentReference in query
     const baseRedirect = (callbackUrl || `${process.env.FRONTEND_URL || 'http://localhost:5173'}/shop`).toString();
@@ -273,29 +302,12 @@ router.post('/ercas/initiate', async (req, res) => {
     });
 
     // Call Ercaspay API
-    // Use direct Axios call to ensure headers are correct and handle errors better
     let response;
     try {
-        const axiosRes = await axios.post(
-            `${ECRS_API_BASE}/api/v1/payment/initiate`,
-            transactionData,
-            {
-                headers: {
-            'Authorization': `Bearer ${ECRS_AUTH_KEY}`,
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                }
-            }
-        );
-        response = {
-            requestSuccessful: true,
-            responseBody: axiosRes.data.responseBody,
-            responseMessage: axiosRes.data.responseMessage
-        };
+        response = await ercasRequest('POST', '/payment/initiate', transactionData);
     } catch (err: any) {
-        console.error("Ercaspay Initiate Error (Axios):", err.response?.data || err.message);
-        const status = err.response?.status;
-        const ercasMessage = err.response?.data?.errorMessage || err.response?.data?.message || err.response?.data?.error || err.message;
+        const status = err.status;
+        const ercasMessage = err.message;
         if (status === 401) {
              return res.status(401).json({
                 success: false,
@@ -311,7 +323,7 @@ router.post('/ercas/initiate', async (req, res) => {
         }
         throw { 
             message: ercasMessage, 
-            responseData: err.response?.data 
+            responseData: err.responseData 
         };
     }
 
@@ -393,7 +405,16 @@ router.get('/verify', async (req, res) => {
     console.log('Verifying reference:', cleanReference);
 
     // Call Ercaspay API
-    const response = await ercaspay.verifyTransaction(cleanReference);
+    let response;
+    try {
+      response = await ercasRequest('GET', `/payment/verify/${encodeURIComponent(cleanReference)}`);
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        error: err.message || 'Failed to verify payment with Ercaspay',
+        status: 'failed',
+      });
+    }
 
     console.log('Ercaspay verify response:', JSON.stringify({
       requestSuccessful: response.requestSuccessful,
@@ -727,7 +748,13 @@ router.post('/webhook', async (req, res) => {
     }
 
     // Confirm with gateway to avoid spoofing
-    const verifyResp = await ercaspay.verifyTransaction(reference);
+    let verifyResp;
+    try {
+      verifyResp = await ercasRequest('GET', `/payment/verify/${encodeURIComponent(reference)}`);
+    } catch (err: any) {
+      console.warn('Gateway verification failed in webhook:', err.message);
+      return res.status(200).json({ received: true });
+    }
     if (verifyResp.requestSuccessful && verifyResp.responseBody) {
       const transactionData = verifyResp.responseBody;
       const code = verifyResp.responseCode;
@@ -838,7 +865,16 @@ router.get('/status/:reference', async (req, res) => {
     }
 
     // Fetch transaction details
-    const response = await ercaspay.fetchTransactionDetails(reference);
+    let response;
+    try {
+      response = await ercasRequest('GET', `/payment/details/${encodeURIComponent(reference)}`);
+    } catch (err: any) {
+      console.error('Error fetching transaction details:', err.message);
+      return res.status(500).json({
+        success: false,
+        error: err.message || 'Internal server error',
+      });
+    }
 
     if (response.requestSuccessful && response.responseBody) {
       return res.status(200).json({
@@ -875,9 +911,18 @@ router.post('/ercas/credit', async (req, res) => {
     console.log(`Crediting payment: ${transRef} for user ${userId}`);
 
     // Verify with Ercaspay
-    const verifyResp = await ercaspay.verifyTransaction(transRef);
-    
-    if (!verifyResp.requestSuccessful || !verifyResp.responseBody || verifyResp.responseCode !== 'success') {
+    let verifyResp;
+    try {
+      verifyResp = await ercasRequest('GET', `/payment/verify/${encodeURIComponent(transRef)}`);
+    } catch (err: any) {
+      console.error("Verification failed:", err.message);
+      return res.status(400).json({ ok: false, error: "Payment verification failed with gateway" });
+    }
+
+    const successCode = verifyResp.responseCode?.toString().toLowerCase() === 'success' ||
+                        verifyResp.responseCode?.toString().toLowerCase() === '00' ||
+                        verifyResp.raw?.status?.toString().toLowerCase() === 'success';
+    if (!successCode || !verifyResp.responseBody) {
        console.error("Verification failed:", verifyResp);
        return res.status(400).json({ ok: false, error: "Payment verification failed with gateway" });
     }
