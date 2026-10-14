@@ -843,9 +843,6 @@ app.get("/api/health", (req: Request, res: Response) => {
 
 // ======== CATALOG PRODUCT ENDPOINTS ========
 
-// Global variable to hold the active database query "promise" for the catalog
-let activeCatalogFetch: Promise<any[]> | null = null;
-
 // Helper to serve product images directly and cache them
 app.get("/api/catalog/:id/image", async (req: Request, res: Response) => {
   try {
@@ -869,76 +866,123 @@ app.get("/api/catalog/:id/image", async (req: Request, res: Response) => {
   }
 });
 
-// Get all catalog products
+// Get a page of public catalog summaries; admins retain the full inventory response.
 app.get("/api/catalog", async (req: Request, res: Response) => {
   try {
     const isAdmin = !!tryGetAdmin(req);
 
-    // Admins can see serialNumbers (needed for inventory management)
     if (isAdmin) {
       const products = await CatalogProduct.find({}, "-image").sort({ createdAt: -1 }).lean();
       const mapped = products.map(p => ({ ...p, image: `/api/catalog/${p.id}/image` }));
       return res.json(mapped);
     }
 
-    // Public response: include serial numbers with IDs/links for account checking, but never the actual log content.
-    res.setHeader("Cache-Control", "public, max-age=30");
-    const cacheKey = "catalog:public:v1";
-    const cached = cacheGet<any[]>(cacheKey);
-    if (cached) return res.json(cached);
+    const limitValue = req.query.limit;
+    const limit = limitValue === undefined ? 20 : Number(limitValue);
+    if (!Number.isInteger(limit) || limit < 1) {
+      return res.status(400).json({ error: "limit must be a positive integer" });
+    }
+    const pageSize = Math.min(limit, 50);
 
-    // If another visitor is currently triggering the DB query, just wait for it to finish!
-    if (activeCatalogFetch) {
-      console.log("Waiting for existing catalog query to finish...");
-      const products = await activeCatalogFetch;
-      return res.json(products);
+    const categoryValue = req.query.category;
+    if (categoryValue !== undefined && typeof categoryValue !== "string") {
+      return res.status(400).json({ error: "category must be a string" });
+    }
+    const category = typeof categoryValue === "string" ? categoryValue.trim() : "";
+
+    const cursorValue = req.query.cursor;
+    if (cursorValue !== undefined && typeof cursorValue !== "string") {
+      return res.status(400).json({ error: "cursor must be a string" });
     }
 
-    // Otherwise, start the DB query and save the 'Promise' in the global variable
-    const reqId = Math.random().toString(36).substring(7);
-    activeCatalogFetch = (async () => {
-      console.time(`Catalog fetch - ${reqId}`);
-      const products = await CatalogProduct.find({}, "-image")
-        .sort({ createdAt: -1 })
-        .lean()
-        .exec();
+    let cursor: { createdAt: Date; id: mongoose.Types.ObjectId } | null = null;
+    if (typeof cursorValue === "string") {
+      try {
+        const decoded = JSON.parse(Buffer.from(cursorValue, "base64url").toString("utf8"));
+        const createdAt = new Date(decoded.createdAt);
+        if (!mongoose.Types.ObjectId.isValid(decoded.id) || Number.isNaN(createdAt.getTime())) {
+          throw new Error("Invalid cursor values");
+        }
+        cursor = { createdAt, id: new mongoose.Types.ObjectId(decoded.id) };
+      } catch {
+        return res.status(400).json({ error: "Invalid catalog cursor" });
+      }
+    }
 
-      // Ensure frontend sees 'availableStock' property matching the cached count and public serial info
-      const mappedProducts = products.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        description: p.description,
-        price: p.price,
-        image: `/api/catalog/${p.id}/image`,
-        category: p.category,
-        createdAt: p.createdAt,
-        availableStock: p.cachedAvailableStock || 0,
-        serialNumbers: Array.isArray(p.serialNumbers)
-          ? p.serialNumbers
-              .filter((s: any) => !s.isUsed)
-              .map((s: any) => ({
-                id: s.id,
-                displayId: s.displayId,
-                url: s.url,
-                isUsed: s.isUsed,
-              }))
-          : [],
-      }));
+    const filter: Record<string, unknown> = {};
+    if (category) filter.category = category;
+    if (cursor) {
+      filter.$or = [
+        { createdAt: { $lt: cursor.createdAt } },
+        { createdAt: cursor.createdAt, _id: { $lt: cursor.id } },
+      ];
+    }
 
-      console.timeEnd(`Catalog fetch - ${reqId}`);
+    const products = await CatalogProduct.find(filter, "-image -serialNumbers")
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(pageSize + 1)
+      .lean()
+      .exec();
+    const hasMore = products.length > pageSize;
+    const page = products.slice(0, pageSize);
+    const lastProduct = page[page.length - 1];
 
-      cacheSet(cacheKey, mappedProducts, 60_000); // 60 seconds Cache
-      return mappedProducts;
-    })();
+    let categoryCounts = cacheGet<Record<string, number>>("catalog:public:category-counts:v1");
+    if (!categoryCounts) {
+      const counts = await CatalogProduct.aggregate<{ _id: string; count: number }>([
+        { $group: { _id: "$category", count: { $sum: 1 } } },
+      ]).exec();
+      categoryCounts = Object.fromEntries(counts.map(({ _id, count }) => [_id, count]));
+      cacheSet("catalog:public:category-counts:v1", categoryCounts, 60_000);
+    }
 
-    const products = await activeCatalogFetch;
-    res.json(products);
+    res.setHeader("Cache-Control", "public, max-age=15");
+    res.json({
+      products: page.map((product) => ({
+        id: product.id,
+        name: product.name,
+        description: product.description,
+        price: product.price,
+        image: `/api/catalog/${product.id}/image`,
+        category: product.category,
+        createdAt: product.createdAt,
+        availableStock: product.cachedAvailableStock || 0,
+      })),
+      nextCursor: hasMore && lastProduct
+        ? Buffer.from(JSON.stringify({ createdAt: lastProduct.createdAt, id: lastProduct._id.toString() })).toString("base64url")
+        : null,
+      hasMore,
+      categoryCounts,
+    });
   } catch (err) {
     console.error("Error fetching catalog products:", err);
     res.status(500).json({ error: "Failed to fetch catalog products" });
-  } finally {
-    // Once it breaks or finishes, clear the active fetch so new ones can start later
-    activeCatalogFetch = null;
+  }
+});
+
+// Account IDs and check links are fetched only when a customer opens a product's accounts.
+app.get("/api/catalog/:id/accounts", async (req: Request, res: Response) => {
+  try {
+    const product = await CatalogProduct.findOne({ id: req.params.id }, "serialNumbers cachedAvailableStock").lean();
+    if (!product) return res.status(404).json({ error: "Product not found" });
+
+    res.setHeader("Cache-Control", "private, max-age=15");
+    res.json({
+      availableStock: product.cachedAvailableStock || 0,
+      serialNumbers: Array.isArray(product.serialNumbers)
+        ? product.serialNumbers
+            .filter((serial) => !serial.isUsed)
+            .map((serial) => ({
+              id: serial.id,
+              displayId: serial.displayId,
+              url: serial.url,
+              isUsed: serial.isUsed,
+            }))
+        : [],
+    });
+  } catch (err) {
+    console.error("Error fetching catalog accounts:", err);
+    res.status(500).json({ error: "Failed to fetch product accounts" });
   }
 });
 
@@ -959,7 +1003,7 @@ app.post("/api/catalog", requireAdmin, async (req: Request, res: Response) => {
       serialNumbers: [],
     });
     await product.save();
-    cacheDel("catalog:public:v1");
+    cacheDel("catalog:public:category-counts:v1");
     res.json(product);
   } catch (err) {
     console.error("Error creating catalog product:", err);
@@ -985,7 +1029,7 @@ app.put("/api/catalog/:id", requireAdmin, async (req: Request, res: Response) =>
     if (!product) {
       return res.status(404).json({ error: "Product not found" });
     }
-    cacheDel("catalog:public:v1");
+    cacheDel("catalog:public:category-counts:v1");
     res.json(product);
   } catch (err) {
     console.error("Error updating catalog product:", err);
@@ -1001,7 +1045,7 @@ app.delete("/api/catalog/:id", requireAdmin, async (req: Request, res: Response)
     if (!product) {
       return res.status(404).json({ error: "Product not found" });
     }
-    cacheDel("catalog:public:v1");
+    cacheDel("catalog:public:category-counts:v1");
     res.json({ message: "Product deleted successfully" });
   } catch (err) {
     console.error("Error deleting catalog product:", err);
@@ -1305,9 +1349,6 @@ app.post("/api/purchase/complete", async (req: Request, res: Response) => {
     } finally {
       session.endSession();
     }
-
-    // Invalidate public cache so stock updates reflect quickly
-    cacheDel("catalog:public:v1");
 
     if (!responsePayload) {
       return res.status(500).json({ error: "Failed to complete purchase" });

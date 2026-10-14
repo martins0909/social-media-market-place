@@ -50,7 +50,7 @@ export async function warmBackend(timeoutMs = 6000): Promise<void> {
 interface SerialNumber {
   id: string;
   displayId?: string;
-  serial: string;
+  serial?: string;
   url?: string;
   isUsed: boolean;
   usedBy?: string;
@@ -67,6 +67,13 @@ interface CatalogProduct {
   serialNumbers?: SerialNumber[];
   availableStock?: number;
   createdAt?: string; // Changed from Date to string
+}
+
+export interface CatalogPage {
+  products: CatalogProduct[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  categoryCounts: Record<string, number>;
 }
 
 // Purchase history as returned by the backend
@@ -96,6 +103,19 @@ const getAdminToken = () => {
 export const catalogAPI = {
   // Get all catalog products
   async getAll(opts: { admin?: boolean; signal?: AbortSignal } = {}): Promise<CatalogProduct[]> {
+    if (!opts.admin) {
+      const products: CatalogProduct[] = [];
+      let cursor: string | null = null;
+      let hasMore = true;
+      while (hasMore) {
+        const page = await catalogAPI.getPage({ cursor, signal: opts.signal });
+        products.push(...page.products);
+        cursor = page.nextCursor;
+        hasMore = page.hasMore;
+      }
+      return products;
+    }
+
     const token = opts.admin ? getAdminToken() : null;
     const res = await apiFetch('/api/catalog', {
       headers: {
@@ -107,6 +127,30 @@ export const catalogAPI = {
       ...p,
       image: p.image && p.image.startsWith("/api/") ? `${API_BASE}${p.image}` : p.image
     }));
+  },
+
+  async getPage(opts: { cursor?: string | null; category?: string; signal?: AbortSignal } = {}): Promise<CatalogPage> {
+    const params = new URLSearchParams({ limit: "20" });
+    if (opts.cursor) params.set("cursor", opts.cursor);
+    if (opts.category) params.set("category", opts.category);
+    const res = await apiFetch(`/api/catalog?${params.toString()}`, { signal: opts.signal }) as CatalogPage;
+    return {
+      ...res,
+      products: res.products.map(product => ({
+        ...product,
+        image: product.image?.startsWith("/api/") ? `${API_BASE}${product.image}` : product.image,
+      })),
+    };
+  },
+
+  async getAccounts(id: string, opts: { signal?: AbortSignal } = {}): Promise<{
+    availableStock: number;
+    serialNumbers: SerialNumber[];
+  }> {
+    return apiFetch(`/api/catalog/${encodeURIComponent(id)}/accounts`, {
+      cache: "no-store",
+      signal: opts.signal,
+    });
   },
 
   // Create a catalog product (admin only)

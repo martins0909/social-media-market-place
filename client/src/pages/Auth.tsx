@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Mail, Lock, User, ArrowRight, Shield } from "lucide-react";
-import { apiFetch, catalogAPI, catalogCategoriesAPI, warmBackend } from "@/lib/api";
+import { apiFetch, catalogCategoriesAPI, warmBackend } from "@/lib/api";
 import logo from "@/assets/pics (2).png";
 import customerCareImage from "@/assets/customercare.jpg";
 
@@ -56,12 +56,7 @@ const Auth = () => {
       // Fire-and-forget prefetch of shop data to speed up first render
       (async () => {
         try {
-          const [prods, cats] = await Promise.all([
-            catalogAPI.getAll(),
-            catalogCategoriesAPI.getAll(),
-          ]);
-          sessionStorage.setItem("prefetch_products", JSON.stringify(prods));
-          sessionStorage.setItem("prefetch_products_at", String(Date.now()));
+          const cats = await catalogCategoriesAPI.getAll();
           sessionStorage.setItem("prefetch_categories", JSON.stringify(cats));
           sessionStorage.setItem("prefetch_categories_at", String(Date.now()));
         } catch { /* ignore */ }
@@ -93,16 +88,11 @@ const Auth = () => {
     // Warm the backend (non-blocking)
     warmBackend().catch(() => {});
 
-    // Prefetch products and categories in the background and cache for quick shop hydration
+    // Prefetch categories without downloading the product catalog before entering the shop.
     (async () => {
       try {
-        const [prods, cats] = await Promise.all([
-          catalogAPI.getAll(),
-          catalogCategoriesAPI.getAll(),
-        ]);
+        const cats = await catalogCategoriesAPI.getAll();
         if (!mounted) return;
-        sessionStorage.setItem("prefetch_products", JSON.stringify(prods));
-        sessionStorage.setItem("prefetch_products_at", String(Date.now()));
         sessionStorage.setItem("prefetch_categories", JSON.stringify(cats));
         sessionStorage.setItem("prefetch_categories_at", String(Date.now()));
       } catch {

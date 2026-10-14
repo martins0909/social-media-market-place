@@ -321,6 +321,9 @@ const CatalogProductSchema = new Schema<ICatalogProduct>({
   createdAt: { type: Date, default: Date.now },
 });
 
+CatalogProductSchema.index({ createdAt: -1, _id: -1 });
+CatalogProductSchema.index({ category: 1, createdAt: -1, _id: -1 });
+
 // Prevent silent double-spends in concurrent purchases.
 // If two requests try to update the same product at once, one will fail with a version error.
 CatalogProductSchema.set("optimisticConcurrency", true);

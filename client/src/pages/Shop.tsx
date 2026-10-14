@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,7 @@ import BoostFollowers from "@/components/boost/BoostFollowers";
 interface SerialNumber {
   id: string;
   displayId?: string;
-  serial: string;
+  serial?: string;
   url?: string;
   isUsed: boolean;
   usedBy?: string;
@@ -59,12 +59,15 @@ interface User {
 
 const initialProducts: Product[] = [];
 
-const PREFETCH_TTL_MS = 5 * 60 * 1000;
-
 const Shop = () => {
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
   const isFirstMount = useRef(true);
+  const catalogRequestId = useRef(0);
+  const accountLoads = useRef(new Set<string>());
+  const loadingMoreRequest = useRef(false);
+  const failedCatalogCursor = useRef<string | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [addFundsAmount, setAddFundsAmount] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("All");
@@ -151,6 +154,11 @@ const Shop = () => {
   }>>([]);
   const [products, setProducts] = useState<Product[]>(initialProducts);
   const [loadingProducts, setLoadingProducts] = useState(true);
+  const [loadingMoreProducts, setLoadingMoreProducts] = useState(false);
+  const [nextProductCursor, setNextProductCursor] = useState<string | null>(null);
+  const [hasMoreProducts, setHasMoreProducts] = useState(false);
+  const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
+  const [loadingAccounts, setLoadingAccounts] = useState<Record<string, boolean>>({});
   // Categories from API
   const [categories, setCategories] = useState<string[]>(["All"]);
   const [categoryIcons, setCategoryIcons] = useState<Record<string, string>>({});
@@ -227,26 +235,13 @@ const Shop = () => {
     }
     setUser(parsedUser);
 
-    // Hydrate from prefetch cache immediately if available, for snappy UI
-    let hydratedFromCache = false;
+    // Categories are small and can be prefetched during sign-in; products load in pages.
     try {
       const now = Date.now();
-      const cachedProds = sessionStorage.getItem("prefetch_products");
-      const cachedProdsAt = Number(sessionStorage.getItem("prefetch_products_at") || "0");
       const cachedCats = sessionStorage.getItem("prefetch_categories");
       const cachedCatsAt = Number(sessionStorage.getItem("prefetch_categories_at") || "0");
 
-      if (cachedProds && cachedProdsAt > 0 && (now - cachedProdsAt) < PREFETCH_TTL_MS) {
-        const prods = JSON.parse(cachedProds) as Product[];
-        setProducts(prods);
-        setLoadingProducts(false);
-        hydratedFromCache = true;
-      } else {
-        sessionStorage.removeItem("prefetch_products");
-        sessionStorage.removeItem("prefetch_products_at");
-      }
-
-      if (cachedCats && cachedCatsAt > 0 && (now - cachedCatsAt) < PREFETCH_TTL_MS) {
+      if (cachedCats && cachedCatsAt > 0 && now - cachedCatsAt < 5 * 60 * 1000) {
         const cats = JSON.parse(cachedCats) as Array<{ name: string }>;
         setCategories(["All", ...cats.map(c => c.name)]);
       } else {
@@ -261,7 +256,7 @@ const Shop = () => {
     warmBackend().catch(() => {});
 
     // Load products/categories (parallel) and then purchase history (deferred)
-    loadProductsAndHistory(parsedUser.id, { silent: hydratedFromCache });
+    loadProductsAndHistory(parsedUser.id);
     loadDepositHistory(parsedUser.id);
     loadReferralBonuses(parsedUser.id);
   }, [navigate]);
@@ -297,27 +292,24 @@ const Shop = () => {
     return () => clearInterval(interval);
   }, [user, ercasRedirectProcessed, processedTransactions]);
 
-  const loadProductsAndHistory = async (userId: string, opts: { silent?: boolean } = {}) => {
+  const loadProductsAndHistory = async (userId: string) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
     try {
-      if (!opts.silent) setLoadingProducts(true);
-
-      // Fetch products and categories in parallel with a softer timeout
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 30000); // Increased to 30 seconds
-      const [catalogProducts, cats] = await Promise.all([
-        catalogAPI.getAll({ signal: controller.signal }),
+      setLoadingProducts(true);
+      const [page, cats] = await Promise.all([
+        catalogAPI.getPage({ signal: controller.signal }),
         catalogCategoriesAPI.getAll({ signal: controller.signal }),
       ]);
-      clearTimeout(timer);
 
-      setProducts(catalogProducts);
+      setProducts(page.products);
+      setNextProductCursor(page.nextCursor);
+      setHasMoreProducts(page.hasMore);
+      setCategoryCounts(page.categoryCounts);
       setCategories(["All", ...cats.map(c => c.name)]);
       setCategoryIcons(Object.fromEntries(cats.map(c => [c.name, c.icon || ""])));
 
-      // Refresh prefetch cache for faster future navigations
       try {
-        sessionStorage.setItem("prefetch_products", JSON.stringify(catalogProducts));
-        sessionStorage.setItem("prefetch_products_at", String(Date.now()));
         sessionStorage.setItem("prefetch_categories", JSON.stringify(cats));
         sessionStorage.setItem("prefetch_categories_at", String(Date.now()));
       } catch {
@@ -345,9 +337,117 @@ const Shop = () => {
       })();
     } catch (error) {
       console.error("Error loading data:", error);
-      if (!opts.silent) toast.error("Failed to load products");
+      toast.error("Failed to load products");
     } finally {
+      clearTimeout(timer);
       setLoadingProducts(false);
+    }
+  };
+
+  const loadMoreProducts = useCallback(async () => {
+    if (!hasMoreProducts || !nextProductCursor || loadingMoreRequest.current || failedCatalogCursor.current === nextProductCursor) return;
+
+    const requestId = catalogRequestId.current;
+    loadingMoreRequest.current = true;
+    setLoadingMoreProducts(true);
+    try {
+      const page = await catalogAPI.getPage({
+        cursor: nextProductCursor,
+        category: activeCategory === "All" ? undefined : activeCategory,
+      });
+      if (requestId !== catalogRequestId.current) return;
+      setProducts(previous => {
+        const existingIds = new Set(previous.map(product => product.id));
+        return [...previous, ...page.products.filter(product => !existingIds.has(product.id))];
+      });
+      setNextProductCursor(page.nextCursor);
+      setHasMoreProducts(page.hasMore);
+      setCategoryCounts(page.categoryCounts);
+      failedCatalogCursor.current = null;
+    } catch (error) {
+      failedCatalogCursor.current = nextProductCursor;
+      console.error("Error loading more catalog products:", error);
+      toast.error("Failed to load more products");
+    } finally {
+      if (requestId === catalogRequestId.current) {
+        loadingMoreRequest.current = false;
+        setLoadingMoreProducts(false);
+      }
+    }
+  }, [activeCategory, hasMoreProducts, nextProductCursor]);
+
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    if (!target || !hasMoreProducts || loadingMoreProducts) return;
+
+    const observer = new IntersectionObserver(
+      entries => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            void loadMoreProducts();
+          } else if (failedCatalogCursor.current === nextProductCursor) {
+            failedCatalogCursor.current = null;
+          }
+        }
+      },
+      { rootMargin: "600px" }
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [hasMoreProducts, loadingMoreProducts, loadMoreProducts, nextProductCursor]);
+
+  const selectCategory = async (category: string) => {
+    if (category === activeCategory) {
+      scrollToCategory(category);
+      return;
+    }
+
+    const requestId = ++catalogRequestId.current;
+    loadingMoreRequest.current = true;
+    failedCatalogCursor.current = null;
+    setActiveCategory(category);
+    setProducts([]);
+    setNextProductCursor(null);
+    setHasMoreProducts((categoryCounts[category] || 0) > 0);
+    setLoadingMoreProducts(true);
+
+    try {
+      const page = await catalogAPI.getPage({ category: category === "All" ? undefined : category });
+      if (requestId !== catalogRequestId.current) return;
+      setProducts(page.products);
+      setNextProductCursor(page.nextCursor);
+      setHasMoreProducts(page.hasMore);
+      setCategoryCounts(page.categoryCounts);
+      requestAnimationFrame(() => scrollToCategory(category));
+    } catch (error) {
+      if (requestId === catalogRequestId.current) {
+        console.error("Error loading category products:", error);
+        toast.error("Failed to load category products");
+      }
+    } finally {
+      if (requestId === catalogRequestId.current) {
+        loadingMoreRequest.current = false;
+        setLoadingMoreProducts(false);
+      }
+    }
+  };
+
+  const loadProductAccounts = async (productId: string) => {
+    if (accountLoads.current.has(productId)) return;
+
+    accountLoads.current.add(productId);
+    setLoadingAccounts(previous => ({ ...previous, [productId]: true }));
+    try {
+      const accountData = await catalogAPI.getAccounts(productId);
+      setProducts(previous => previous.map(product =>
+        product.id === productId ? { ...product, ...accountData } : product
+      ));
+    } catch (error) {
+      console.error("Error loading product accounts:", error);
+      toast.error("Failed to load product accounts");
+    } finally {
+      accountLoads.current.delete(productId);
+      setLoadingAccounts(previous => ({ ...previous, [productId]: false }));
     }
   };
 
@@ -496,18 +596,18 @@ const Shop = () => {
 
       const updatedProducts = products.map(p => {
         if (p.id === selectedProduct.id) {
-          const assigned = result.assignedSerials || [];
           return {
             ...p,
             availableStock: typeof result.updatedProduct?.availableStock === "number"
               ? result.updatedProduct.availableStock
               : (typeof p.availableStock === "number" ? Math.max(0, p.availableStock - purchaseQuantity) : p.availableStock),
-            serialNumbers: (p.serialNumbers || []).filter(s => !assigned.includes(s.serial))
+            serialNumbers: undefined
           };
         }
         return p;
       });
       setProducts(updatedProducts);
+      if (expandedAccounts[selectedProduct.id]) void loadProductAccounts(selectedProduct.id);
       
       // Reload purchase history
       const history = await purchaseHistoryAPI.getByUserId(user.id);
@@ -610,7 +710,9 @@ const Shop = () => {
   }, {} as Record<string, Product[]>);
 
   // Get categories that have products (excluding "All")
-  const categoriesWithProducts = categories.filter(cat => cat !== "All" && groupedProducts[cat]?.length > 0);
+  const categoriesWithProducts = categories.filter(
+    cat => cat !== "All" && (categoryCounts[cat] || 0) > 0 && groupedProducts[cat]?.length > 0
+  );
 
   // Function to scroll to category section
   const scrollToCategory = (category: string) => {
@@ -1062,6 +1164,8 @@ const Shop = () => {
                     src={product.image}
                     alt={product.name}
                     className="w-16 h-16 object-cover rounded-xl"
+                    loading="lazy"
+                    decoding="async"
                   />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -1093,7 +1197,11 @@ const Shop = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setExpandedAccounts(prev => ({ ...prev, [product.id]: !prev[product.id] }))}
+                onClick={() => {
+                  const willExpand = !accountsExpanded;
+                  setExpandedAccounts(prev => ({ ...prev, [product.id]: willExpand }));
+                  if (willExpand && !product.serialNumbers) void loadProductAccounts(product.id);
+                }}
                 className="rounded-full border-amber-500 text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950 h-10 w-full"
               >
                 <List className="h-4 w-4 mr-2" />
@@ -1123,6 +1231,8 @@ const Shop = () => {
                   src={product.image}
                   alt={product.name}
                   className="w-16 h-16 object-cover rounded-lg group-hover:scale-105 transition-transform duration-300"
+                  loading="lazy"
+                  decoding="async"
                 />
               </div>
 
@@ -1191,7 +1301,12 @@ const Shop = () => {
             </p>
 
             <div className="space-y-2">
-              {visibleSerials.length === 0 ? (
+              {loadingAccounts[product.id] ? (
+                <div className="flex items-center justify-center gap-2 py-4 text-sm text-gray-500">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading accounts...
+                </div>
+              ) : visibleSerials.length === 0 ? (
                 <p className="text-sm text-gray-400 text-center py-4">No checkable accounts available</p>
               ) : (
                 visibleSerials.map(serial => {
@@ -1272,10 +1387,7 @@ const Shop = () => {
           onMenuClick={() => setShowCategoryDrawer(true)}
           onGeneralMenuClick={() => setShowMenuDrawer(true)}
           shopCategories={categories}
-          onShopCategorySelect={(category) => {
-            setActiveCategory(category);
-            scrollToCategory(category);
-          }}
+          onShopCategorySelect={category => void selectCategory(category)}
           onShopBalanceClick={() => setShowBalanceModal(true)}
           onShopPurchaseHistoryClick={() => setShowPurchaseHistory(true)}
           onShopDepositHistoryClick={() => setShowDepositHistory(true)}
@@ -1759,6 +1871,16 @@ const Shop = () => {
                     })()}
                   </div>
                 )}
+                {hasMoreProducts && (
+                  <div ref={loadMoreRef} className="flex min-h-16 items-center justify-center py-6" aria-live="polite">
+                    {loadingMoreProducts && (
+                      <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading more products...
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </main>
@@ -2207,10 +2329,9 @@ const Shop = () => {
             <div className="flex-1 overflow-y-auto py-4 pb-20">
               {categories.map((category) => {
                 const isActive = activeCategory === category;
-                const categoryProducts = category === "All" 
-                  ? products 
-                  : products.filter(p => p.category === category);
-                const productCount = categoryProducts.length;
+                const productCount = category === "All"
+                  ? Object.values(categoryCounts).reduce((total, count) => total + count, 0)
+                  : categoryCounts[category] || 0;
                 
                 // Choose appropriate icon for each category
                 const getCategoryIcon = (cat: string) => {
@@ -2243,8 +2364,7 @@ const Shop = () => {
                   <button
                     key={category}
                     onClick={() => {
-                      setActiveCategory(category);
-                      scrollToCategory(category);
+                      void selectCategory(category);
                       setShowCategoryDrawer(false);
                     }}
                     className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-[#e8f1ff] dark:hover:bg-[#0B0F14] transition-colors ${
