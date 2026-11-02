@@ -156,9 +156,7 @@ async function sendPasswordResetEmail(toEmail: string, resetLink: string): Promi
     return;
   }
 
-  // Fallback: no provider configured
-  console.warn("Password reset requested but email provider not configured (set RESEND_API_KEY and RESEND_FROM)");
-  console.warn("Reset link:", resetLink);
+  throw new Error("Password reset email provider is not configured");
 }
 
 // We'll start the server after connecting to MongoDB (so startup failures surface immediately)
@@ -461,6 +459,11 @@ app.post("/api/auth/forgot-password", async (req: Request, res: Response) => {
     const normalizedEmail = (email || "").trim().toLowerCase();
     if (!normalizedEmail) return res.status(400).json({ error: "Email is required" });
 
+    if (!RESEND_API_KEY || !RESEND_FROM) {
+      console.error("Password reset email is not configured. Set RESEND_API_KEY and RESEND_FROM.");
+      return res.status(503).json({ error: "Password reset is temporarily unavailable" });
+    }
+
     const user = await User.findOne({ email: normalizedEmail }).exec();
 
     // Always respond ok (avoid user enumeration)
@@ -474,7 +477,8 @@ app.post("/api/auth/forgot-password", async (req: Request, res: Response) => {
     }
 
     const token = crypto.randomBytes(32).toString("hex");
-    user.passwordResetTokenHash = sha256Hex(token);
+    const tokenHash = sha256Hex(token);
+    user.passwordResetTokenHash = tokenHash;
     user.passwordResetExpiresAt = new Date(now + 60 * 60 * 1000); // 1 hour
     user.passwordResetLastSentAt = new Date(now);
     await user.save();
@@ -482,7 +486,28 @@ app.post("/api/auth/forgot-password", async (req: Request, res: Response) => {
     const frontendBase = (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "");
     const resetLink = `${frontendBase}/reset-password?token=${encodeURIComponent(token)}`;
 
-    await sendPasswordResetEmail(normalizedEmail, resetLink);
+    try {
+      await sendPasswordResetEmail(normalizedEmail, resetLink);
+    } catch (emailError) {
+      try {
+        await User.updateOne(
+          { _id: user._id, passwordResetTokenHash: tokenHash },
+          {
+            $unset: {
+              passwordResetTokenHash: 1,
+              passwordResetExpiresAt: 1,
+              passwordResetLastSentAt: 1,
+            },
+          }
+        ).exec();
+      } catch (cleanupError) {
+        console.error(
+          "Failed to clear reset token after email delivery failed:",
+          cleanupError instanceof Error ? cleanupError.message : "Unknown database error"
+        );
+      }
+      throw emailError;
+    }
 
     // In production we never include resetLink in the response
     if ((process.env.NODE_ENV || "").toLowerCase() !== "production") {
@@ -491,7 +516,15 @@ app.post("/api/auth/forgot-password", async (req: Request, res: Response) => {
 
     return res.json({ ok: true });
   } catch (err) {
-    console.error("Forgot password error:", err);
+    if (axios.isAxiosError(err)) {
+      const providerMessage = err.response?.data?.message;
+      console.error("Forgot password email delivery failed:", {
+        status: err.response?.status,
+        message: typeof providerMessage === "string" ? providerMessage : err.message,
+      });
+    } else {
+      console.error("Forgot password error:", err instanceof Error ? err.message : "Unknown error");
+    }
     return res.status(500).json({ error: "Failed to process request" });
   }
 });

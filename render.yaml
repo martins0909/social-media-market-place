@@ -18,7 +18,7 @@ services:
       - key: ADMIN_PASSWORD
         sync: false
       - key: FRONTEND_URL
-        value: https://social-media-market-place-com.onrender.com
+        value: https://socialmediamarketplace.org
       - key: FRONTEND_URLS
         value: ""
       - key: ECRS_SECRET_KEY
@@ -30,7 +30,7 @@ services:
       - key: RESEND_API_KEY
         sync: false
       - key: RESEND_FROM
-        sync: false
+        value: socialmediamarketplace.org <no-reply@socialmediamarketplace.org>
       - key: POCKETFI_SECRET
         sync: false
       - key: POCKETFI_API_KEY
